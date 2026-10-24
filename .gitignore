@@ -1,0 +1,29 @@
+# Build-Ausgaben des Bundles (werden von build-wbce-portable.ps1 erzeugt)
+/Apache24/
+/php/
+/mariadb/
+/htdocs/
+/data/
+/logs/
+/tmp/
+/downloads/
+/dist/
+/_tmp_*/
+/conf-*.template
+/start.bat
+/stop.bat
+/my.ini
+/WBCE-Portable.exe
+/README-WBCE-Portable.txt
+/LICENSE-*.txt
+/NOTICE-*.txt
+
+# Lazarus / FPC
+/launcher/lib/
+/launcher/backup/
+/launcher/*.exe
+/launcher/*.res
+/launcher/*.lps
+/launcher/*.compiled
+/launcher/*.o
+/launcher/*.ppu
