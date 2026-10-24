@@ -14,8 +14,12 @@ build scripts and the launcher source code in this repository.
 | Adminer | 4.8.1 | Apache License 2.0 or GPL-2.0 | https://github.com/vrana/adminer |
 | WBCE-Portable.exe launcher | this repo | MIT | `launcher/` in this repo; built with Free Pascal 3.2.2 / Lazarus (LCL and RTL: LGPL with static-linking exception) |
 
-The Microsoft Visual C++ Redistributable is **not** included; it must be installed
-separately (https://aka.ms/vc14/vc_redist.x64.exe).
+The release ZIP also contains the unmodified, Microsoft-signed installer
+`vcredist/vc_redist.x64.exe` (Microsoft Visual C++ Redistributable, x64), which the
+launcher offers to install when the runtime is missing (the signature is verified
+before it is run). It is distributed under Microsoft's license terms for
+redistributable code (https://aka.ms/vc14/vc_redist.x64.exe) and is **not** covered by
+the MIT license of this repository.
 
 ## Source code offer (GPL-2.0 components)
 

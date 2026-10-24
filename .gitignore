@@ -6,6 +6,7 @@
 /data/
 /logs/
 /tmp/
+/vcredist/
 /downloads/
 /dist/
 /_tmp_*/

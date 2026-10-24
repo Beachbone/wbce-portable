@@ -4,18 +4,25 @@ Komplett portables [WBCE CMS](https://github.com/WBCE/WBCE_CMS) für Windows –
 
 *English: a fully portable WBCE CMS bundle for Windows (Apache + PHP + MariaDB). Unzip to a USB stick, run `WBCE-Portable.exe`, click "Server starten". Installer values are listed below.*
 
-## Download
+## Schnellstart
 
-Fertige ZIP unter **[Releases](https://github.com/Beachbone/wbce-portable/releases)** (ca. 150 MB, mit `SHA256SUMS.txt`).
+1. **[ZIP herunterladen](https://github.com/Beachbone/wbce-portable/releases)** und auf den Stick oder in einen Ordner entpacken (Pfad ohne Umlaute/Sonderzeichen).
+2. **`WBCE-Portable.exe`** starten → **Server starten** klicken.
+3. **Fragt das Programm „Jetzt installieren?“ → mit *Ja* bestätigen.** Das ist das einmalig nötige Microsoft-Paket *Visual C++ Runtime (x64)*; Windows fragt dabei nach Administratorrechten, die Installation dauert ca. 1 Minute und danach startet der Server von selbst. Der Browser öffnet `http://localhost:4443/wbce`.
 
-Enthalten (Release 0.1.0): WBCE CMS 1.6.9 · Apache 2.4.69 · PHP 8.3.36 · MariaDB 11.4.13 · Adminer 4.8.1
+> **Zum Visual C++ Runtime:** Der Webserver (Apache) braucht das kostenlose Microsoft-Paket *Visual C++ Redistributable (x64), Version 14.50 oder neuer*. WBCE Portable **prüft das bei jedem Start selbst** und installiert es nach Rückfrage, wenn es fehlt oder zu alt ist – der Installer liegt in der ZIP (Ordner `vcredist`), es funktioniert also auch ohne Internet. Nötig ist das **einmal pro PC**, an dem der Stick benutzt wird, und dafür ein Benutzer mit Administratorrechten. Ohne dieses Paket würde der Server mit Meldungen wie *„VCRUNTIME140.dll fehlt“* oder *„MSVCP140.dll fehlt“* nicht starten.
+> Manuell geht es auch: [`vc_redist.x64.exe` von Microsoft](https://aka.ms/vc14/vc_redist.x64.exe) oder `vcredist\vc_redist.x64.exe` aus der ZIP als Administrator ausführen.
 
-Voraussetzung: Windows 10/11 (64 Bit) und das aktuelle [Visual C++ Redistributable (x64)](https://aka.ms/vc14/vc_redist.x64.exe).
+Beim ersten Start folgt der WBCE-Installer (Werte siehe unten). Zum Beenden **Server stoppen** klicken und erst danach den Stick abziehen.
 
-## Benutzung
+Voraussetzung: Windows 10/11 (64 Bit). Die ZIP ist ca. 170 MB groß (mit `SHA256SUMS.txt`).
+
+Enthalten (Release 0.1.1): WBCE CMS 1.6.9 · Apache 2.4.69 · PHP 8.3.36 · MariaDB 11.4.13 · Adminer 4.8.1 · Microsoft VC++ Runtime Installer
+
+## Benutzung im Detail
 
 1. ZIP auf den Stick oder in einen Ordner entpacken (Pfad ohne Umlaute/Sonderzeichen).
-2. `WBCE-Portable.exe` starten und **Server starten** klicken. Der Browser öffnet `http://localhost:4443/wbce`.
+2. `WBCE-Portable.exe` starten und **Server starten** klicken (ggf. Installation des Visual C++ Runtime bestätigen, siehe oben). Der Browser öffnet `http://localhost:4443/wbce`.
 3. Beim ersten Start den WBCE-Installer ausfüllen:
 
    | Feld | Wert |
@@ -32,7 +39,7 @@ Der Server lauscht nur auf `127.0.0.1` (Port 4443 Web, 3311 Datenbank) und ist a
 
 ## Selbst bauen
 
-Voraussetzungen: Windows, PowerShell 5.1, [Lazarus](https://www.lazarus-ide.org/) (FPC 3.2.x) für den Launcher.
+Voraussetzungen: Windows, PowerShell 5.1, Internet (Downloads), [Lazarus](https://www.lazarus-ide.org/) (FPC 3.2.x) für den Launcher.
 
 ```powershell
 # 1. Launcher kompilieren

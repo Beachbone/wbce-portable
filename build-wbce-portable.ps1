@@ -30,6 +30,8 @@ $Downloads = @{
     Php    = "https://downloads.php.net/~windows/releases/php-8.3.36-Win32-vs16-x64.zip"  # Thread-Safe!
     Maria  = "https://archive.mariadb.org/mariadb-11.4.13/winx64-packages/mariadb-11.4.13-winx64.zip"
     Adminer = "https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1.php"
+    # Microsoft VC++ Runtime (neueste 14.x): wird mitgeliefert, der Launcher installiert es bei Bedarf
+    VcRedist = "https://aka.ms/vc14/vc_redist.x64.exe"
 }
 
 Write-Host "== WBCE Portable Builder =="
@@ -80,6 +82,16 @@ Get-File $Downloads.Apache  "$Base\downloads\httpd.zip"
 Get-File $Downloads.Php     "$Base\downloads\php.zip"
 Get-File $Downloads.Maria   "$Base\downloads\mariadb.zip"
 Get-File $Downloads.Adminer  "$Base\htdocs\adminer.php"
+Get-File $Downloads.VcRedist "$Base\downloads\vc_redist.x64.exe"
+
+# Installer muss von Microsoft signiert sein, sonst wird er nicht ins Bundle uebernommen
+$sig = Get-AuthenticodeSignature -LiteralPath "$Base\downloads\vc_redist.x64.exe"
+if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notlike "*O=Microsoft Corporation*") {
+    Remove-Item "$Base\downloads\vc_redist.x64.exe" -Force
+    throw "vc_redist.x64.exe hat keine gueltige Microsoft-Signatur (Status: $($sig.Status))"
+}
+New-Item -ItemType Directory -Force -Path "$Base\vcredist" | Out-Null
+Copy-Item "$Base\downloads\vc_redist.x64.exe" "$Base\vcredist\vc_redist.x64.exe" -Force
 
 # --- Entpacken ----------------------------------------------------------------
 Write-Host "2/6 Entpacke ..."
@@ -275,10 +287,13 @@ Komplett portables WBCE CMS (Apache + PHP + MariaDB) fuer USB-Stick oder
 beliebigen Ordner. Keine Installation, keine Adminrechte, nichts in der
 Registry. Windows 10/11 (64 Bit).
 
-Voraussetzung
--------------
-Microsoft Visual C++ Redistributable (x64, aktuelle Version 2015-2026). Auf den
-meisten PCs vorhanden; sonst: https://aka.ms/vc14/vc_redist.x64.exe
+Voraussetzung: Microsoft Visual C++ Runtime (x64) 14.50 oder neuer
+------------------------------------------------------------------
+Wird beim ersten Start AUTOMATISCH geprueft. Fehlt es, fragt WBCE-Portable.exe
+"Jetzt installieren?" und startet die Installation (Windows fragt nach
+Administratorrechten; einmalig pro PC, ca. 1 Minute). Der Installer liegt im
+Ordner vcredist\ (funktioniert auch ohne Internet).
+Manuell: vcredist\vc_redist.x64.exe oder https://aka.ms/vc14/vc_redist.x64.exe
 
 Benutzung
 ---------
@@ -319,6 +334,8 @@ Sicherung: den ganzen Ordner (bei gestopptem Server) kopieren.
 
 Fehlersuche
 -----------
+  "Runtime fehlt"           Installation zulassen (Administratorrechte) oder
+                            vcredist\vc_redist.x64.exe als Administrator ausfuehren.
   "Port 4443/3311 belegt"   anderes Programm nutzt den Port (z. B. XAMPP) - beenden.
   Apache startet nicht      logs\apache-error.log
   MariaDB startet nicht     data\*.err

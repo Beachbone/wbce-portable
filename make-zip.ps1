@@ -27,13 +27,13 @@ foreach ($d in "data", "logs", "tmp") {
 if (Test-Path "$Base\htdocs\wbce\config.php") {
     throw "htdocs\wbce\config.php existiert - das Bundle ist bereits installiert. Neu bauen."
 }
-foreach ($f in "WBCE-Portable.exe", "Apache24\bin\httpd.exe", "php\php.exe", "mariadb\bin\mysqld.exe", "htdocs\wbce\index.php") {
+foreach ($f in "WBCE-Portable.exe", "vcredist\vc_redist.x64.exe", "Apache24\bin\httpd.exe", "php\php.exe", "mariadb\bin\mysqld.exe", "htdocs\wbce\index.php") {
     if (-not (Test-Path "$Base\$f")) { throw "Fehlt: $f (build-wbce-portable.ps1 ausfuehren, Launcher bauen)" }
 }
 
 # --- Whitelist der Top-Level-Eintraege -------------------------------------------
 $include = @(
-    "Apache24", "php", "mariadb", "htdocs", "data", "logs", "tmp",
+    "Apache24", "php", "mariadb", "htdocs", "data", "logs", "tmp", "vcredist",
     "conf-httpd.template", "conf-php.template", "conf-my.template",
     "start.bat", "stop.bat", "WBCE-Portable.exe",
     "README-WBCE-Portable.txt", "THIRD-PARTY-NOTICES.md"

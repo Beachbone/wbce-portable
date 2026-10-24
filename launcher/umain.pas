@@ -6,20 +6,25 @@ unit umain;
   Startet/stoppt Apache + MariaDB aus dem Ordner, in dem die EXE liegt.
   Alles laeuft unsichtbar im Hintergrund; das Fenster zeigt nur den Status.
   Kommandozeile:  /start      Server direkt beim Programmstart starten
-                  /selftest   Start, 3 s warten, Stopp, beenden (Log: logs\launcher-selftest.txt) }
+                  /selftest   Start, 3 s warten, Stopp, beenden (Log: logs\launcher-selftest.txt)
+                  /vccheck    VC++-Installer beschaffen + Signatur pruefen (ohne zu installieren) }
 
 interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, ExtCtrls,
-  Process, Sockets, LCLIntf, Windows;
+  Process, Sockets, LCLIntf, Windows, Registry, ShellApi;
 
 const
-  APP_VERSION = '0.1.0';
+  APP_VERSION = '0.1.1';
   HTTP_PORT = 4443;
   DB_PORT   = 3311;
   APP_URL   = 'http://localhost:4443/wbce';
   ADMIN_URL = 'http://localhost:4443/wbce/admin';
+  // Apache Lounge VS18 braucht das VC++-Runtime 14.50 oder neuer (Visual Studio 2026)
+  VC_MIN_MINOR = 50;
+  VC_REG_KEY = 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64';
+  VC_URL = 'https://aka.ms/vc14/vc_redist.x64.exe';
 
 type
   TServerState = (ssStopped, ssStarting, ssRunning, ssStopping);
@@ -54,6 +59,10 @@ type
     procedure Fail(const AMsg: string);
     procedure SetState(AState: TServerState);
     procedure CheckFiles;
+    function VcRuntimeOk(out AVersion: string): Boolean;
+    function VcInstallerPath: string;
+    procedure InstallVcRuntime;
+    procedure EnsureVcRuntime;
     procedure WriteConfig(const ATemplate, ADest: string);
     procedure SavePids;
     procedure LoadPids;
@@ -101,7 +110,7 @@ begin
   FState := ssStopped;
   FSilent := False;
   for i := 1 to ParamCount do
-    if SameText(ParamStr(i), '/selftest') then
+    if SameText(ParamStr(i), '/selftest') or SameText(ParamStr(i), '/vccheck') then
     begin
       FSilent := True;
       FSelfTestLog := FBase + 'logs\launcher-selftest.txt';
@@ -339,6 +348,142 @@ begin
            'Das Programm muss im entpackten WBCE-Portable-Ordner liegen.');
 end;
 
+{ Ist das Microsoft Visual C++ Runtime (x64) in ausreichender Version installiert? }
+function TfrmMain.VcRuntimeOk(out AVersion: string): Boolean;
+var
+  R: TRegistry;
+  major, minor: Integer;
+begin
+  Result := False;
+  AVersion := '';
+  R := TRegistry.Create(KEY_READ or KEY_WOW64_64KEY);
+  try
+    try
+      R.RootKey := HKEY_LOCAL_MACHINE;
+      if R.OpenKeyReadOnly(VC_REG_KEY) and R.ValueExists('Installed') and
+         (R.ReadInteger('Installed') = 1) then
+      begin
+        major := R.ReadInteger('Major');
+        minor := R.ReadInteger('Minor');
+        AVersion := Format('%d.%d', [major, minor]);
+        Result := (major > 14) or ((major = 14) and (minor >= VC_MIN_MINOR));
+      end;
+    except
+      Result := False;   // Schluessel fehlt/nicht lesbar = nicht installiert
+    end;
+  finally
+    R.Free;
+  end;
+end;
+
+{ Pfad des Installers: mitgelieferte Kopie (offline) oder Download von Microsoft.
+  Vor der Verwendung wird die digitale Signatur geprueft (Microsoft Corporation). }
+function TfrmMain.VcInstallerPath: string;
+var
+  rc: Integer;
+  sz: Int64;
+begin
+  Result := FBase + 'vcredist\vc_redist.x64.exe';
+  if not FileExists(Result) then
+  begin
+    Result := FBase + 'tmp\vc_redist.x64.exe';
+    Log('Lade Visual C++ Runtime von Microsoft (ca. 18 MB) ...');
+    SysUtils.DeleteFile(Result);
+    RunWait('curl.exe', ['-L', '--fail', '--silent', '--max-time', '300', '-o', Result, VC_URL]);
+    sz := 0;
+    if FileExists(Result) then
+      with TFileStream.Create(Result, fmOpenRead or fmShareDenyNone) do
+      try
+        sz := Size;
+      finally
+        Free;
+      end;
+    if sz < 1000000 then
+      Fail('Der Download des Visual C++ Runtime ist fehlgeschlagen (keine Internetverbindung?).' +
+           LineEnding + 'Bitte manuell installieren: ' + VC_URL);
+  end;
+
+  Log('Prüfe digitale Signatur des Installers ...');
+  rc := RunWait('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    '$s = Get-AuthenticodeSignature -LiteralPath ''' + Result + '''; ' +
+    'if ($s.Status -eq ''Valid'' -and $s.SignerCertificate.Subject -like ''*O=Microsoft Corporation*'') ' +
+    '{ exit 0 } else { exit 1 }']);
+  if rc <> 0 then
+    Fail('Die digitale Signatur des Installers ist ungültig - er wird nicht ausgeführt.' +
+         LineEnding + 'Bitte manuell von Microsoft installieren: ' + VC_URL);
+end;
+
+{ Startet den Installer mit Administratorrechten (UAC-Abfrage) und wartet. }
+procedure TfrmMain.InstallVcRuntime;
+var
+  exe: string;
+  wExe, wVerb, wParams: UnicodeString;
+  sei: TShellExecuteInfoW;
+  code: DWORD;
+begin
+  exe := VcInstallerPath;
+  Log('Starte Installation (Administratorrechte nötig) ...');
+  wExe := UnicodeString(exe);
+  wVerb := 'runas';
+  wParams := '/install /passive /norestart';
+  FillChar(sei, SizeOf(sei), 0);
+  sei.cbSize := SizeOf(sei);
+  sei.fMask := SEE_MASK_NOCLOSEPROCESS;
+  sei.Wnd := Handle;
+  sei.lpVerb := PWideChar(wVerb);
+  sei.lpFile := PWideChar(wExe);
+  sei.lpParameters := PWideChar(wParams);
+  sei.nShow := SW_SHOWNORMAL;
+  if not ShellExecuteExW(@sei) then
+    Fail('Die Installation wurde abgebrochen oder es fehlen Administratorrechte.' +
+         LineEnding + 'Bitte als Administrator installieren: ' + VC_URL);
+  try
+    while Windows.WaitForSingleObject(sei.hProcess, 100) = WAIT_TIMEOUT do
+      Application.ProcessMessages;
+    code := 0;
+    Windows.GetExitCodeProcess(sei.hProcess, code);
+  finally
+    Windows.CloseHandle(sei.hProcess);
+  end;
+  Log('Installer beendet (Code ' + IntToStr(code) + ').');
+  // 0 = ok, 1638 = neuere Version schon da, 3010 = ok, Neustart empfohlen
+  if (code <> 0) and (code <> 1638) and (code <> 3010) then
+    Fail('Die Installation des Visual C++ Runtime ist fehlgeschlagen (Code ' +
+         IntToStr(code) + ').');
+end;
+
+{ Stellt sicher, dass das Runtime vorhanden ist; fragt ggf. nach und installiert. }
+procedure TfrmMain.EnsureVcRuntime;
+var
+  ver: string;
+begin
+  if VcRuntimeOk(ver) then Exit;
+
+  if ver = '' then
+    Log('Visual C++ Runtime (x64) ist nicht installiert.')
+  else
+    Log('Visual C++ Runtime ' + ver + ' ist zu alt (benötigt: 14.' + IntToStr(VC_MIN_MINOR) + ').');
+
+  if FSilent then
+    Fail('Visual C++ Runtime (x64) 14.' + IntToStr(VC_MIN_MINOR) + ' oder neuer fehlt.');
+
+  if MessageDlg('WBCE Portable',
+       'Für den Webserver wird das "Microsoft Visual C++ Runtime (x64)" benötigt, ' +
+       'das auf diesem PC fehlt oder zu alt ist.' + LineEnding + LineEnding +
+       'Jetzt installieren?' + LineEnding +
+       '(Einmalig pro PC, dauert ca. 1 Minute. Windows fragt nach Administratorrechten.)',
+       mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+    Fail('Ohne das Visual C++ Runtime kann der Server nicht starten.' + LineEnding +
+         'Manuell installieren: ' + VC_URL);
+
+  InstallVcRuntime;
+
+  if not VcRuntimeOk(ver) then
+    Fail('Das Visual C++ Runtime wird noch nicht erkannt.' + LineEnding +
+         'Bitte Windows neu starten und WBCE Portable erneut öffnen.');
+  Log('Visual C++ Runtime ' + ver + ' ist jetzt installiert.');
+end;
+
 procedure TfrmMain.WriteConfig(const ATemplate, ADest: string);
 var
   L: TStringList;
@@ -402,6 +547,7 @@ begin
   try
     Log('Prüfe Dateien ...');
     CheckFiles;
+    EnsureVcRuntime;
     ForceDirectories(FBase + 'data');
     ForceDirectories(FBase + 'logs');
     ForceDirectories(FBase + 'tmp');
@@ -545,6 +691,7 @@ end;
 procedure TfrmMain.FormShowEvent(Sender: TObject);
 var
   i: Integer;
+  ver: string;
 begin
   // Prozesse einer frueheren Sitzung uebernehmen (z. B. Launcher wurde beendet)
   LoadPids;
@@ -561,8 +708,25 @@ begin
     Log('Bereit. Ordner: ' + FBase);
   end;
 
+  if VcRuntimeOk(ver) then
+    Log('Visual C++ Runtime ' + ver + ': OK')
+  else
+    Log('Visual C++ Runtime fehlt - wird beim Serverstart installiert.');
+
   for i := 1 to ParamCount do
-    if SameText(ParamStr(i), '/start') or SameText(ParamStr(i), '/selftest') then
+    if SameText(ParamStr(i), '/vccheck') then
+    begin
+      // Test: Installer beschaffen und Signatur pruefen, aber NICHT installieren
+      try
+        Log('vccheck: Installer = ' + VcInstallerPath);
+        Log('vccheck: OK');
+      except
+        on E: Exception do Log('vccheck: FEHLER: ' + E.Message);
+      end;
+      Close;
+      Break;
+    end
+    else if SameText(ParamStr(i), '/start') or SameText(ParamStr(i), '/selftest') then
     begin
       Application.ProcessMessages;
       DoStart;
