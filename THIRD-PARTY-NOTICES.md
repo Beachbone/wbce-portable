@@ -14,12 +14,15 @@ build scripts and the launcher source code in this repository.
 | Adminer | 4.8.1 | Apache License 2.0 or GPL-2.0 | https://github.com/vrana/adminer |
 | WBCE-Portable.exe launcher | this repo | MIT | `launcher/` in this repo; built with Free Pascal 3.2.2 / Lazarus (LCL and RTL: LGPL with static-linking exception) |
 
-The release ZIP also contains the unmodified, Microsoft-signed installer
-`vcredist/vc_redist.x64.exe` (Microsoft Visual C++ Redistributable, x64), which the
-launcher offers to install when the runtime is missing (the signature is verified
-before it is run). It is distributed under Microsoft's license terms for
-redistributable code (https://aka.ms/vc14/vc_redist.x64.exe) and is **not** covered by
-the MIT license of this repository.
+The release ZIP also contains the unmodified, Microsoft-signed Visual C++ runtime
+libraries `vcruntime140.dll`, `vcruntime140_1.dll` and `msvcp140.dll` (version 14.51,
+x64) next to `httpd.exe` (`Apache24/bin/`) and `php.exe` (`php/`), so that no
+system-wide installation of the Visual C++ Redistributable is needed (app-local
+deployment). MariaDB ships its own copies. These files are distributed under
+Microsoft's license terms for redistributable code
+(https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files) and are
+**not** covered by the MIT license of this repository. The build script verifies the
+Microsoft signature and the minimum version before copying them.
 
 ## Source code offer (GPL-2.0 components)
 

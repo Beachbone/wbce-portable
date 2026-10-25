@@ -7,22 +7,20 @@ Komplett portables [WBCE CMS](https://github.com/WBCE/WBCE_CMS) für Windows –
 ## Schnellstart
 
 1. **[ZIP herunterladen](https://github.com/Beachbone/wbce-portable/releases)** und auf den Stick oder in einen Ordner entpacken (Pfad ohne Umlaute/Sonderzeichen).
-2. **`WBCE-Portable.exe`** starten → **Server starten** klicken.
-3. **Fragt das Programm „Jetzt installieren?“ → mit *Ja* bestätigen.** Das ist das einmalig nötige Microsoft-Paket *Visual C++ Runtime (x64)*; Windows fragt dabei nach Administratorrechten, die Installation dauert ca. 1 Minute und danach startet der Server von selbst. Der Browser öffnet `http://localhost:4443/wbce`.
+2. **`WBCE-Portable.exe`** starten → **Server starten** klicken. Der Browser öffnet `http://localhost:4443/wbce`.
 
-> **Zum Visual C++ Runtime:** Der Webserver (Apache) braucht das kostenlose Microsoft-Paket *Visual C++ Redistributable (x64), Version 14.50 oder neuer*. WBCE Portable **prüft das bei jedem Start selbst** und installiert es nach Rückfrage, wenn es fehlt oder zu alt ist – der Installer liegt in der ZIP (Ordner `vcredist`), es funktioniert also auch ohne Internet. Nötig ist das **einmal pro PC**, an dem der Stick benutzt wird, und dafür ein Benutzer mit Administratorrechten. Ohne dieses Paket würde der Server mit Meldungen wie *„VCRUNTIME140.dll fehlt“* oder *„MSVCP140.dll fehlt“* nicht starten.
-> Manuell geht es auch: [`vc_redist.x64.exe` von Microsoft](https://aka.ms/vc14/vc_redist.x64.exe) oder `vcredist\vc_redist.x64.exe` aus der ZIP als Administrator ausführen.
+> **Visual C++ Runtime:** Die nötigen Microsoft-Bibliotheken (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`, Version 14.51) liegen direkt bei Apache und PHP im Ordner (*App-local Deployment*). Es muss also **nichts installiert** werden und es sind **keine Administratorrechte** nötig – auch nicht auf gesperrten Rechnern.
 
 Beim ersten Start folgt der WBCE-Installer (Werte siehe unten). Zum Beenden **Server stoppen** klicken und erst danach den Stick abziehen.
 
-Voraussetzung: Windows 10/11 (64 Bit). Die ZIP ist ca. 170 MB groß (mit `SHA256SUMS.txt`).
+Voraussetzung: Windows 10/11 (64 Bit). Die ZIP ist ca. 150 MB groß (mit `SHA256SUMS.txt`).
 
-Enthalten (Release 0.1.1): WBCE CMS 1.6.9 · Apache 2.4.69 · PHP 8.3.36 · MariaDB 11.4.13 · Adminer 4.8.1 · Microsoft VC++ Runtime Installer
+Enthalten (Release 0.2.0): WBCE CMS 1.6.9 · Apache 2.4.69 · PHP 8.3.36 · MariaDB 11.4.13 · Adminer 4.8.1 · Microsoft VC++ Runtime-DLLs 14.51
 
 ## Benutzung im Detail
 
 1. ZIP auf den Stick oder in einen Ordner entpacken (Pfad ohne Umlaute/Sonderzeichen).
-2. `WBCE-Portable.exe` starten und **Server starten** klicken (ggf. Installation des Visual C++ Runtime bestätigen, siehe oben). Der Browser öffnet `http://localhost:4443/wbce`.
+2. `WBCE-Portable.exe` starten und **Server starten** klicken. Der Browser öffnet `http://localhost:4443/wbce`.
 3. Beim ersten Start den WBCE-Installer ausfüllen:
 
    | Feld | Wert |
@@ -49,10 +47,10 @@ lazbuild launcher\wbce_portable.lpi        # erzeugt launcher\WBCE-Portable.exe
 powershell -ExecutionPolicy Bypass -File .\build-wbce-portable.ps1 [-WbceVersion 1.6.9 | -WbceZip C:\pfad\wbce.zip]
 
 # 3. Release-ZIP packen (nur im sauberen Zustand: data\, logs\, tmp\ leer, keine config.php)
-powershell -ExecutionPolicy Bypass -File .\make-zip.ps1 -Version 0.1.0
+powershell -ExecutionPolicy Bypass -File .\make-zip.ps1 -Version 0.2.0_WBCE-1.6.9
 ```
 
-Die Download-URLs und Versionen stehen am Anfang von `build-wbce-portable.ps1` und müssen bei neuen Upstream-Releases angepasst werden.
+**Update auf neue Komponenten:** Versionen/URLs im Block `$Downloads` am Anfang von `build-wbce-portable.ps1` anpassen (WBCE per `-WbceVersion`), dann `build-wbce-portable.ps1 -Clean` ausführen (leert Download-Cache sowie `Apache24`, `php`, `mariadb`; `data`, `htdocs\wbce`, `logs` und `tmp` bleiben unberührt), das Bundle sauber machen (`data\`, `logs\`, `tmp\` leer, keine `config.php`) und mit `make-zip.ps1 -Version <neue Version>` packen. Die Microsoft-Runtime-DLLs werden dabei automatisch in der aktuellen Version von Microsoft geholt.
 
 Der Launcher (`launcher/`) startet und stoppt MariaDB und Apache unsichtbar im Hintergrund, schreibt die Konfiguration bei jedem Start mit dem aktuellen Pfad neu (Laufwerksbuchstabe egal), initialisiert die Datenbank beim ersten Start und fährt MariaDB beim Stoppen sauber herunter. `WBCE-Portable.exe /start` startet den Server direkt; `/selftest` führt Start → Stopp → Beenden aus (Log in `logs\launcher-selftest.txt`).
 

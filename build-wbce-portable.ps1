@@ -4,18 +4,28 @@
 # Ordner, in dem dieses Skript liegt. Danach: start.bat doppelklicken,
 # Browser oeffnet http://localhost:4443
 #
-# Voraussetzung: Windows 10/11 x64, Visual C++ Redistributable (x64, aktuell),
-# PowerShell 5 (immer vorhanden).
+# Voraussetzung: Windows 10/11 x64, PowerShell 5 (immer vorhanden), Internet.
+# Die Microsoft-VC++-Runtime-DLLs werden aus der aktuellen vc_redist.x64.exe entpackt.
 #
 # Aufruf:  powershell -ExecutionPolicy Bypass -File .\build-wbce-portable.ps1
 #   -WbceVersion "1.6.9"   WBCE-Release von GitHub laden (Standard: 1.6.9)
 #   -WbceZip "C:\x.zip"    stattdessen ein vorhandenes WBCE-Archiv verwenden
 #   -WbceVersion ""        ohne -WbceZip: WBCE nicht einpacken
+#   -Clean                 vor dem Bauen Download-Cache (downloads\, adminer.php) sowie
+#                          Apache24\, php\, mariadb\ leeren. Fuer Updates noetig: die
+#                          Download-Ziele haben feste Namen und werden sonst nicht neu
+#                          geladen, alte Dateien blieben im Bundle liegen.
+#                          data\, htdocs\wbce, logs\, tmp\ bleiben unberuehrt.
+#
+# Update-Ablauf: Versionen/URLs in $Downloads (unten) anpassen ->
+#   build-wbce-portable.ps1 -Clean -> Bundle sauber machen (data\, logs\, tmp\ leer,
+#   keine config.php) -> make-zip.ps1 -Version X.Y.Z
 # =============================================================================
 
 param(
     [string]$WbceZip = "",
-    [string]$WbceVersion = "1.6.9"
+    [string]$WbceVersion = "1.6.9",
+    [switch]$Clean
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,11 +40,33 @@ $Downloads = @{
     Php    = "https://downloads.php.net/~windows/releases/php-8.3.36-Win32-vs16-x64.zip"  # Thread-Safe!
     Maria  = "https://archive.mariadb.org/mariadb-11.4.13/winx64-packages/mariadb-11.4.13-winx64.zip"
     Adminer = "https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1.php"
-    # Microsoft VC++ Runtime (neueste 14.x): wird mitgeliefert, der Launcher installiert es bei Bedarf
+    # Microsoft VC++ Runtime: wird nur entpackt (DLLs), nicht installiert oder mitgeliefert
     VcRedist = "https://aka.ms/vc14/vc_redist.x64.exe"
 }
 
 Write-Host "== WBCE Portable Builder =="
+
+# --- Optional: Komponenten + Cache fuer ein Update leeren ----------------------
+if ($Clean) {
+    Write-Host "== -Clean: leere Download-Cache und Komponenten =="
+    if (Get-Process httpd, mysqld -ErrorAction SilentlyContinue) {
+        throw "Apache/MariaDB laufen noch - zuerst stoppen (stop.bat)."
+    }
+    foreach ($f in @("downloads\httpd.zip", "downloads\php.zip", "downloads\mariadb.zip",
+                     "downloads\vc_redist.x64.exe", "htdocs\adminer.php")) {
+        if (Test-Path -LiteralPath "$Base\$f") { Remove-Item -LiteralPath "$Base\$f" -Force }
+    }
+    if (Test-Path -LiteralPath "$Base\downloads") {
+        Get-ChildItem -LiteralPath "$Base\downloads" -Filter "wbce-*.zip" -File |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+    }
+    foreach ($d in @("Apache24", "php", "mariadb")) {
+        if (Test-Path -LiteralPath "$Base\$d") {
+            Get-ChildItem -LiteralPath "$Base\$d" -Force |
+                ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+        }
+    }
+}
 
 # --- Ordnerstruktur -----------------------------------------------------------
 foreach ($d in @("downloads","Apache24","php","mariadb","htdocs","data","logs","tmp")) {
@@ -82,16 +114,6 @@ Get-File $Downloads.Apache  "$Base\downloads\httpd.zip"
 Get-File $Downloads.Php     "$Base\downloads\php.zip"
 Get-File $Downloads.Maria   "$Base\downloads\mariadb.zip"
 Get-File $Downloads.Adminer  "$Base\htdocs\adminer.php"
-Get-File $Downloads.VcRedist "$Base\downloads\vc_redist.x64.exe"
-
-# Installer muss von Microsoft signiert sein, sonst wird er nicht ins Bundle uebernommen
-$sig = Get-AuthenticodeSignature -LiteralPath "$Base\downloads\vc_redist.x64.exe"
-if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notlike "*O=Microsoft Corporation*") {
-    Remove-Item "$Base\downloads\vc_redist.x64.exe" -Force
-    throw "vc_redist.x64.exe hat keine gueltige Microsoft-Signatur (Status: $($sig.Status))"
-}
-New-Item -ItemType Directory -Force -Path "$Base\vcredist" | Out-Null
-Copy-Item "$Base\downloads\vc_redist.x64.exe" "$Base\vcredist\vc_redist.x64.exe" -Force
 
 # --- Entpacken ----------------------------------------------------------------
 Write-Host "2/6 Entpacke ..."
@@ -108,6 +130,88 @@ $mariaSrc = (Get-ChildItem "$Base\_tmp_maria" -Directory | Select-Object -First 
 Copy-Item "$mariaSrc\*" "$Base\mariadb\" -Recurse -Force
 Remove-Item "$Base\_tmp_apache","$Base\_tmp_php","$Base\_tmp_maria" -Recurse -Force
 
+# --- Microsoft VC++ Runtime app-local beilegen ---------------------------------
+# Apache Lounge VS18 braucht die Runtime 14.50+. Statt sie auf dem Ziel-PC zu installieren
+# (Adminrechte), liegen die DLLs neben httpd.exe bzw. php.exe; dort sucht Windows zuerst.
+# MariaDB bringt seine eigenen Kopien mit.
+# Quelle: die aktuelle vc_redist.x64.exe von Microsoft. Sie wird NICHT ausgefuehrt, sondern
+# nur entpackt (die CAB-Container stecken unkomprimiert in der EXE). Die Build-PC-Installation
+# ist nicht noetig; nur wenn der Download/Entpacken scheitert, dient System32 als Ersatz.
+Write-Host "   Beschaffe VC++-Runtime-DLLs ..."
+$vcDlls = "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll"
+$vcMinVersion = [version]"14.50"
+$vcDir = "$Base\_tmp_vc"
+if (Test-Path -LiteralPath $vcDir) { Remove-Item -LiteralPath $vcDir -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $vcDir | Out-Null
+
+function Test-MsSigned($path) {
+    $s = Get-AuthenticodeSignature -LiteralPath $path
+    return ($s.Status -eq "Valid" -and $s.SignerCertificate.Subject -like "*O=Microsoft Corporation*")
+}
+
+function Expand-VcRedist($exe, $outDir) {
+    if (-not (Test-MsSigned $exe)) { throw "vc_redist.x64.exe hat keine gueltige Microsoft-Signatur" }
+    $bytes = [IO.File]::ReadAllBytes($exe)
+    $n = 0
+    for ($i = 0; $i -lt $bytes.Length - 16; $i++) {
+        # CAB-Kopf "MSCF" + 4 Nullbytes; Bytes 8..11 = Gesamtgroesse des Cabinets
+        if ($bytes[$i] -eq 0x4D -and $bytes[$i+1] -eq 0x53 -and $bytes[$i+2] -eq 0x43 -and $bytes[$i+3] -eq 0x46 -and
+            $bytes[$i+4] -eq 0 -and $bytes[$i+5] -eq 0 -and $bytes[$i+6] -eq 0 -and $bytes[$i+7] -eq 0) {
+            $size = [BitConverter]::ToUInt32($bytes, $i + 8)
+            if ($size -lt 100000 -or $i + $size -gt $bytes.Length) { continue }
+            $n++
+            $cab = "$outDir\outer$n.cab"
+            $chunk = New-Object byte[] $size
+            [Array]::Copy($bytes, $i, $chunk, 0, $size)
+            [IO.File]::WriteAllBytes($cab, $chunk)
+            $d1 = "$outDir\outer$n"
+            New-Item -ItemType Directory -Force -Path $d1 | Out-Null
+            & expand.exe -F:* $cab $d1 | Out-Null
+            # darin liegen die MSI/CAB-Pakete; die CAB mit den x64-DLLs enthaelt "*.dll_amd64"
+            foreach ($inner in Get-ChildItem -LiteralPath $d1 -File) {
+                $d2 = "$d1\x_$($inner.Name)"
+                New-Item -ItemType Directory -Force -Path $d2 | Out-Null
+                & expand.exe -F:vcruntime140*_amd64 $inner.FullName $d2 | Out-Null
+                & expand.exe -F:msvcp140.dll_amd64 $inner.FullName $d2 | Out-Null
+            }
+        }
+    }
+    $found = @{}
+    foreach ($dll in $vcDlls) {
+        $hit = Get-ChildItem -LiteralPath $outDir -Recurse -File -Filter "${dll}_amd64" | Select-Object -First 1
+        if (-not $hit) { throw "$dll wurde in vc_redist.x64.exe nicht gefunden" }
+        $found[$dll] = $hit.FullName
+    }
+    return $found
+}
+
+$vcSource = @{}
+$vcFrom = ""
+try {
+    Get-File $Downloads.VcRedist "$Base\downloads\vc_redist.x64.exe"
+    $vcSource = Expand-VcRedist "$Base\downloads\vc_redist.x64.exe" $vcDir
+    $vcFrom = "Microsoft-Download"
+} catch {
+    Write-Host "   Download/Entpacken fehlgeschlagen ($($_.Exception.Message)) - versuche System32 des Build-PCs"
+    foreach ($dll in $vcDlls) {
+        $src = Join-Path $env:SystemRoot "System32\$dll"
+        if (-not (Test-Path -LiteralPath $src)) { throw "$dll weder per Download noch in System32 verfuegbar" }
+        $vcSource[$dll] = $src
+    }
+    $vcFrom = "System32"
+}
+foreach ($dll in $vcDlls) {
+    # die entpackte Datei heisst z.B. vcruntime140.dll_amd64: erst umbenennen, dann pruefen
+    $tmp = "$vcDir\$dll"
+    Copy-Item -LiteralPath $vcSource[$dll] -Destination $tmp -Force
+    if (-not (Test-MsSigned $tmp)) { throw "$dll hat keine gueltige Microsoft-Signatur" }
+    $ver = [version](Get-Item -LiteralPath $tmp).VersionInfo.ProductVersion
+    if ($ver -lt $vcMinVersion) { throw "$dll ist Version $ver, benoetigt wird mindestens $vcMinVersion" }
+    Copy-Item -LiteralPath $tmp -Destination "$Base\Apache24\bin\$dll" -Force
+    Copy-Item -LiteralPath $tmp -Destination "$Base\php\$dll" -Force
+    Write-Host ("   {0} {1} ({2})" -f $dll, $ver, $vcFrom)
+}
+Remove-Item -LiteralPath $vcDir -Recurse -Force
 # --- WBCE optional einpacken --------------------------------------------------
 if (-not $WbceZip -and $WbceVersion) {
     $WbceZip = "$Base\downloads\wbce-$WbceVersion.zip"
@@ -287,13 +391,6 @@ Komplett portables WBCE CMS (Apache + PHP + MariaDB) fuer USB-Stick oder
 beliebigen Ordner. Keine Installation, keine Adminrechte, nichts in der
 Registry. Windows 10/11 (64 Bit).
 
-Voraussetzung: Microsoft Visual C++ Runtime (x64) 14.50 oder neuer
-------------------------------------------------------------------
-Wird beim ersten Start AUTOMATISCH geprueft. Fehlt es, fragt WBCE-Portable.exe
-"Jetzt installieren?" und startet die Installation (Windows fragt nach
-Administratorrechten; einmalig pro PC, ca. 1 Minute). Der Installer liegt im
-Ordner vcredist\ (funktioniert auch ohne Internet).
-Manuell: vcredist\vc_redist.x64.exe oder https://aka.ms/vc14/vc_redist.x64.exe
 
 Benutzung
 ---------
@@ -334,8 +431,8 @@ Sicherung: den ganzen Ordner (bei gestopptem Server) kopieren.
 
 Fehlersuche
 -----------
-  "Runtime fehlt"           Installation zulassen (Administratorrechte) oder
-                            vcredist\vc_redist.x64.exe als Administrator ausfuehren.
+  "VCRUNTIME140.dll fehlt"  Ordner unvollstaendig entpackt (Apache24\bin\vcruntime140*.dll,
+                            msvcp140.dll) - ZIP erneut entpacken.
   "Port 4443/3311 belegt"   anderes Programm nutzt den Port (z. B. XAMPP) - beenden.
   Apache startet nicht      logs\apache-error.log
   MariaDB startet nicht     data\*.err
