@@ -8,16 +8,18 @@ unit umain;
   Kommandozeile:  /start      Server direkt beim Programmstart starten
                   /selftest   Start, 3 s warten, Stopp, beenden (Log: logs\launcher-selftest.txt)
                   /phpswitch:8.5  neueste PHP-Version des Zweigs laden und aktivieren, beenden
-                  /phpuse:php-8.3.36  vorhandenes PHP-Verzeichnis aktivieren, beenden }
+                  /phpuse:php-8.3.36  vorhandenes PHP-Verzeichnis aktivieren, beenden
+                  /autosetup  Start, WBCE automatisch einrichten, Stopp (nur zum Testen; Zugangsdaten
+                              aus den Umgebungsvariablen WBCE_SETUP_USER, _MAIL, _PASS, _DEMO) }
 
 interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, ExtCtrls,
-  Process, Sockets, LCLIntf, Windows, uphp;
+  Process, Sockets, LCLIntf, Windows, uphp, usetup, ulogo;
 
 const
-  APP_VERSION = '0.3.0';
+  APP_VERSION = '0.4.0';
   HTTP_PORT = 4443;
   DB_PORT   = 3311;
   APP_URL   = 'http://localhost:4443/wbce';
@@ -39,6 +41,9 @@ type
     FSelfTestLog: string;
     FPhpDir: string;      // aktives PHP-Verzeichnis (php oder php-8.x.y), ohne Backslash
     lblPhp: TLabel;
+    lblSetup: TLabel;
+    imgLogo: TImage;
+    FLogoOk: Boolean;
     shpLamp: TShape;
     lblStatus: TLabel;
     lblHint: TLabel;
@@ -58,6 +63,10 @@ type
     procedure Fail(const AMsg: string);
     procedure SetState(AState: TServerState);
     procedure CheckFiles;
+    procedure UpdateSetupLabel;
+    function DoSetup(const D: TSetupData; out AErr: string): Boolean;
+    procedure OfferSetup(AFromStart: Boolean);
+    procedure SetupClick(Sender: TObject);
     procedure RefreshPhpLabel;
     procedure PhpClick(Sender: TObject);
     procedure PhpCli(const AArg: string);
@@ -111,7 +120,7 @@ begin
   FSilent := False;
   for i := 1 to ParamCount do
     if SameText(ParamStr(i), '/selftest') or (Pos('/phpswitch:', LowerCase(ParamStr(i))) = 1) or
-       (Pos('/phpuse:', LowerCase(ParamStr(i))) = 1) then
+       (Pos('/phpuse:', LowerCase(ParamStr(i))) = 1) or SameText(ParamStr(i), '/autosetup') then
     begin
       FSilent := True;
       FSelfTestLog := FBase + 'logs\launcher-selftest.txt';
@@ -176,6 +185,19 @@ begin
   memLog.ScrollBars := ssAutoVertical;
   memLog.Font.Size := 9;
 
+  lblSetup := TLabel.Create(Self);
+  lblSetup.Parent := Self;
+  lblSetup.AutoSize := False;
+  lblSetup.SetBounds(16, 324, 220, 18);
+  lblSetup.Font.Color := clGray;
+  lblSetup.Font.Style := [fsUnderline];
+  lblSetup.Cursor := crHandPoint;
+  lblSetup.Caption := 'WBCE automatisch einrichten ...';
+  lblSetup.Hint := 'Administrator-Zugang anlegen und WBCE ohne Browser-Installer einrichten';
+  lblSetup.ShowHint := True;
+  lblSetup.Visible := False;
+  lblSetup.OnClick := @SetupClick;
+
   lblPhp := TLabel.Create(Self);
   lblPhp.Parent := Self;
   lblPhp.AutoSize := False;
@@ -187,6 +209,15 @@ begin
   lblPhp.Hint := 'PHP-Version anzeigen oder wechseln';
   lblPhp.ShowHint := True;
   lblPhp.OnClick := @PhpClick;
+
+  // Kopfbereich mit WBCE-Logo: alle bisherigen Elemente nach unten schieben
+  for i := 0 to ControlCount - 1 do
+    Controls[i].Top := Controls[i].Top + LOGO_HEIGHT + 16;
+  ClientHeight := ClientHeight + LOGO_HEIGHT + 16;
+  imgLogo := TImage.Create(Self);
+  imgLogo.Parent := Self;
+  imgLogo.SetBounds(16, 10, LOGO_WIDTH, LOGO_HEIGHT);
+  FLogoOk := LoadLogo(imgLogo);
 
   tmr := TTimer.Create(Self);
   tmr.Interval := 2000;
@@ -259,6 +290,7 @@ begin
   btnStart.Enabled := AState = ssStopped;
   btnStop.Enabled := AState = ssRunning;
   lblPhp.Enabled := AState in [ssStopped, ssRunning];
+  UpdateSetupLabel;
   btnSite.Enabled := AState = ssRunning;
   btnAdmin.Enabled := AState = ssRunning;
   Application.ProcessMessages;
@@ -421,6 +453,69 @@ begin
     RunWait('taskkill.exe', ['/F', '/T', '/PID', IntToStr(APid)]);
 end;
 
+procedure TfrmMain.UpdateSetupLabel;
+begin
+  lblSetup.Visible := (FState = ssRunning) and not WbceInstalled(FBase);
+end;
+
+function TfrmMain.DoSetup(const D: TSetupData; out AErr: string): Boolean;
+begin
+  Result := False;
+  AErr := '';
+  if FState <> ssRunning then
+  begin
+    AErr := 'Der Server läuft nicht.';
+    Exit;
+  end;
+  Log('Richte WBCE ein ...');
+  Enabled := False;
+  Screen.Cursor := crHourGlass;
+  try
+    Result := RunSetup(FBase, D, @Log, AErr);
+  finally
+    Screen.Cursor := crDefault;
+    Enabled := True;
+  end;
+  if Result then
+    Log('WBCE ist eingerichtet. Anmeldung: ' + ADMIN_URL + '  (Benutzer: ' + D.User + ')')
+  else
+    Log('FEHLER bei der Einrichtung: ' + AErr);
+  UpdateSetupLabel;
+end;
+
+{ Dialog zur automatischen Einrichtung; bei Abbruch/Fehler geht es mit dem Installer im Browser weiter }
+procedure TfrmMain.OfferSetup(AFromStart: Boolean);
+var
+  D: TSetupData;
+  err: string;
+begin
+  if ShowSetupDialog(Self, FBase, D) then
+  begin
+    if DoSetup(D, err) then
+    begin
+      MessageDlg('WBCE Portable', 'WBCE ist eingerichtet.' + LineEnding + LineEnding +
+        'Anmeldung in der Administration mit dem Benutzer "' + D.User + '" und dem ' +
+        'gewählten Passwort.', mtInformation, [mbOK], 0);
+      OpenURL(ADMIN_URL);
+    end
+    else
+    begin
+      MessageDlg('WBCE Portable', 'Die automatische Einrichtung ist fehlgeschlagen:' + LineEnding +
+        LineEnding + err + LineEnding + LineEnding +
+        'Alles wurde zurückgesetzt; der Installer im Browser kann benutzt werden.',
+        mtError, [mbOK], 0);
+      if AFromStart then OpenURL(APP_URL);
+    end;
+  end
+  else if AFromStart then
+    OpenURL(APP_URL);
+end;
+
+procedure TfrmMain.SetupClick(Sender: TObject);
+begin
+  if (FState = ssRunning) and not WbceInstalled(FBase) then OfferSetup(False);
+end;
+
 procedure TfrmMain.RefreshPhpLabel;
 begin
   FPhpDir := PhpActiveDir(FBase);
@@ -524,7 +619,11 @@ begin
     if not FileExists(FBase + 'htdocs\wbce\config.php') then
       Log('Erster Start: WBCE-Installer, DB-Host 127.0.0.1:3311, DB wbce, ' +
           'Benutzer root, Passwort leer, System Windows.');
-    if not FSilent then OpenURL(APP_URL);
+    if not FSilent then
+    begin
+      if WbceInstalled(FBase) then OpenURL(APP_URL)
+      else OfferSetup(True);
+    end;
   except
     on E: Exception do
     begin
@@ -618,6 +717,8 @@ end;
 procedure TfrmMain.FormShowEvent(Sender: TObject);
 var
   i: Integer;
+  D: TSetupData;
+  err: string;
 begin
   // Prozesse einer frueheren Sitzung uebernehmen (z. B. Launcher wurde beendet)
   LoadPids;
@@ -634,11 +735,30 @@ begin
     Log('Bereit. Ordner: ' + FBase);
   end;
   RefreshPhpLabel;
+  if not FLogoOk then Log('Hinweis: Das WBCE-Logo konnte nicht geladen werden.');
 
   for i := 1 to ParamCount do
     if (Pos('/phpswitch:', LowerCase(ParamStr(i))) = 1) or (Pos('/phpuse:', LowerCase(ParamStr(i))) = 1) then
     begin
       PhpCli(ParamStr(i));
+      Close;
+      Break;
+    end
+    else if SameText(ParamStr(i), '/autosetup') then
+    begin
+      Application.ProcessMessages;
+      DoStart;
+      if FState = ssRunning then
+      begin
+        D.Title := 'WBCE Portable';
+        D.User := SysUtils.GetEnvironmentVariable('WBCE_SETUP_USER');
+        D.Mail := SysUtils.GetEnvironmentVariable('WBCE_SETUP_MAIL');
+        D.Pass := SysUtils.GetEnvironmentVariable('WBCE_SETUP_PASS');
+        D.Demo := SysUtils.GetEnvironmentVariable('WBCE_SETUP_DEMO') = '1';
+        DoSetup(D, err);
+        Pause(1500);
+        DoStop;
+      end;
       Close;
       Break;
     end

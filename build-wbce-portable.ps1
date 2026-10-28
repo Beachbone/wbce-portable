@@ -448,8 +448,12 @@ Benutzung
 1. ZIP auf den Stick (oder in einen Ordner) entpacken.
 2. WBCE-Portable.exe doppelklicken (kein Autostart: Windows erlaubt das bei
    USB-Sticks nicht mehr).
-3. "Server starten" klicken. Der Browser oeffnet http://localhost:4443/wbce
-4. Beim ERSTEN Start erscheint der WBCE-Installer:
+3. "Server starten" klicken.
+4. Beim ERSTEN Start fragt das Programm nach Benutzername, E-Mail und Passwort
+   (mind. 12 Zeichen) fuer den Administrator und richtet WBCE damit automatisch ein
+   (die Datenbank erhaelt einen eigenen Zufalls-Benutzer; er steht in
+   htdocs\wbce\config.php, fuer Adminer geht auch root ohne Passwort).
+   Alternativ "Installer im Browser benutzen" waehlen; dort gilt:
      System:          Windows
      Datenbank-Host:  127.0.0.1:3311      (Port 3311 mit angeben!)
      Datenbankname:   wbce

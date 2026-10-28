@@ -27,3 +27,8 @@
 /launcher/*.compiled
 /launcher/*.o
 /launcher/*.ppu
+
+# zusaetzliche PHP-Versionen und Auswahl (vom Launcher erzeugt)
+php-active.txt
+/php-*/
+/launcher/php-*/

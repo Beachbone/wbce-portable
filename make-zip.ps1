@@ -33,7 +33,7 @@ foreach ($f in "WBCE-Portable.exe", "Apache24\bin\httpd.exe", "Apache24\bin\vcru
 
 # --- Whitelist der Top-Level-Eintraege -------------------------------------------
 $include = @(
-    "Apache24", "php", "mariadb", "htdocs", "data", "logs", "tmp",
+    "Apache24", "php", "mariadb", "htdocs", "data", "logs", "tmp", "demo",
     "conf-httpd.template", "conf-php.template", "conf-my.template",
     "start.bat", "stop.bat", "WBCE-Portable.exe",
     "README-WBCE-Portable.txt", "THIRD-PARTY-NOTICES.md"

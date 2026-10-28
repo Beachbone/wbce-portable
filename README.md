@@ -7,7 +7,8 @@ Komplett portables [WBCE CMS](https://github.com/WBCE/WBCE_CMS) für Windows –
 ## Schnellstart
 
 1. **[ZIP herunterladen](https://github.com/Beachbone/wbce-portable/releases)**, dann **vor dem Entpacken**: Rechtsklick auf die ZIP → *Eigenschaften* → unten **„Zulassen“** ankreuzen → *OK* (siehe Kasten unten). Danach auf den Stick oder in einen Ordner entpacken (Pfad ohne Umlaute/Sonderzeichen).
-2. **`WBCE-Portable.exe`** starten → **Server starten** klicken. Der Browser öffnet `http://localhost:4443/wbce`.
+2. **`WBCE-Portable.exe`** starten → **Server starten** klicken.
+3. Beim ersten Start fragt das Programm nach **Benutzername, E-Mail und Passwort** für den Administrator und **richtet WBCE damit automatisch ein** (die Datenbank bekommt dabei einen eigenen, zufälligen Zugang). Danach öffnet sich die Administration. Wer lieber den normalen WBCE-Installer benutzt, wählt „Installer im Browser benutzen“.
 
 > **Windows blockiert die EXE?** Dateien aus dem Internet tragen die Markierung „Mark of the Web“; Windows zeigt dann eine SmartScreen-Warnung oder lässt die EXE gar nicht starten. Am einfachsten setzt man **vor dem Entpacken** bei der ZIP den Haken *„Zulassen“* (Eigenschaften der Datei) – dann sind alle entpackten Dateien freigegeben. Nachträglich geht es in PowerShell mit `Get-ChildItem -Recurse "C:\Pfad\zu\WBCE-Portable" | Unblock-File`. Bei der SmartScreen-Meldung hilft *„Weitere Informationen“ → „Trotzdem ausführen“*. Die EXE ist (noch) nicht signiert.
 >
@@ -23,7 +24,7 @@ Enthalten (Release 0.3.0): WBCE CMS 1.6.9 · Apache 2.4.69 · PHP 8.3.36 · Mari
 
 1. ZIP auf den Stick oder in einen Ordner entpacken (Pfad ohne Umlaute/Sonderzeichen).
 2. `WBCE-Portable.exe` starten und **Server starten** klicken. Der Browser öffnet `http://localhost:4443/wbce`.
-3. Beim ersten Start den WBCE-Installer ausfüllen:
+3. Beim ersten Start fragt der Launcher nach den Zugangsdaten des Administrators und richtet WBCE automatisch ein (Passwort: mindestens 12 Zeichen; erlaubt sind Buchstaben, Ziffern und `_ - ! # * + @ $ & :`; der Knopf „Zufallspasswort erzeugen“ hilft). Der Datenbank-Benutzer samt Zufallspasswort steht danach in `htdocs\wbce\config.php`; für Adminer funktioniert weiterhin `root` ohne Passwort. Der Link „WBCE automatisch einrichten …“ unten links im Fenster ruft den Dialog später noch einmal auf, solange WBCE nicht eingerichtet ist. Alternativ lässt sich der **normale WBCE-Installer im Browser** verwenden (Werte siehe Tabelle):
 
    | Feld | Wert |
    |---|---|
