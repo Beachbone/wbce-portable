@@ -6,16 +6,18 @@ unit umain;
   Startet/stoppt Apache + MariaDB aus dem Ordner, in dem die EXE liegt.
   Alles laeuft unsichtbar im Hintergrund; das Fenster zeigt nur den Status.
   Kommandozeile:  /start      Server direkt beim Programmstart starten
-                  /selftest   Start, 3 s warten, Stopp, beenden (Log: logs\launcher-selftest.txt) }
+                  /selftest   Start, 3 s warten, Stopp, beenden (Log: logs\launcher-selftest.txt)
+                  /phpswitch:8.5  neueste PHP-Version des Zweigs laden und aktivieren, beenden
+                  /phpuse:php-8.3.36  vorhandenes PHP-Verzeichnis aktivieren, beenden }
 
 interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, ExtCtrls,
-  Process, Sockets, LCLIntf, Windows;
+  Process, Sockets, LCLIntf, Windows, uphp;
 
 const
-  APP_VERSION = '0.2.0';
+  APP_VERSION = '0.3.0';
   HTTP_PORT = 4443;
   DB_PORT   = 3311;
   APP_URL   = 'http://localhost:4443/wbce';
@@ -35,6 +37,8 @@ type
     FDbPid: DWORD;
     FSilent: Boolean;     // Selbsttest: keine Dialoge, kein Browser
     FSelfTestLog: string;
+    FPhpDir: string;      // aktives PHP-Verzeichnis (php oder php-8.x.y), ohne Backslash
+    lblPhp: TLabel;
     shpLamp: TShape;
     lblStatus: TLabel;
     lblHint: TLabel;
@@ -54,6 +58,9 @@ type
     procedure Fail(const AMsg: string);
     procedure SetState(AState: TServerState);
     procedure CheckFiles;
+    procedure RefreshPhpLabel;
+    procedure PhpClick(Sender: TObject);
+    procedure PhpCli(const AArg: string);
     procedure WriteConfig(const ATemplate, ADest: string);
     procedure SavePids;
     procedure LoadPids;
@@ -77,12 +84,11 @@ var
 implementation
 
 const
-  REQUIRED_FILES: array[0..11] of string = (
+  REQUIRED_FILES: array[0..10] of string = (
     'Apache24\bin\httpd.exe',
     'Apache24\bin\vcruntime140.dll',
     'Apache24\bin\vcruntime140_1.dll',
     'Apache24\bin\msvcp140.dll',
-    'php\php8apache2_4.dll',
     'mariadb\bin\mysqld.exe',
     'mariadb\bin\mariadb-install-db.exe',
     'mariadb\bin\mariadb.exe',
@@ -104,7 +110,8 @@ begin
   FState := ssStopped;
   FSilent := False;
   for i := 1 to ParamCount do
-    if SameText(ParamStr(i), '/selftest') then
+    if SameText(ParamStr(i), '/selftest') or (Pos('/phpswitch:', LowerCase(ParamStr(i))) = 1) or
+       (Pos('/phpuse:', LowerCase(ParamStr(i))) = 1) then
     begin
       FSilent := True;
       FSelfTestLog := FBase + 'logs\launcher-selftest.txt';
@@ -115,7 +122,7 @@ begin
   BorderIcons := [biSystemMenu, biMinimize];
   Position := poScreenCenter;
   ClientWidth := 460;
-  ClientHeight := 330;
+  ClientHeight := 352;
   OnCloseQuery := @FormCloseQueryEvent;
   OnShow := @FormShowEvent;
 
@@ -168,6 +175,18 @@ begin
   memLog.ReadOnly := True;
   memLog.ScrollBars := ssAutoVertical;
   memLog.Font.Size := 9;
+
+  lblPhp := TLabel.Create(Self);
+  lblPhp.Parent := Self;
+  lblPhp.AutoSize := False;
+  lblPhp.SetBounds(244, 324, 200, 18);
+  lblPhp.Alignment := taRightJustify;
+  lblPhp.Font.Color := clGray;
+  lblPhp.Font.Style := [fsUnderline];
+  lblPhp.Cursor := crHandPoint;
+  lblPhp.Hint := 'PHP-Version anzeigen oder wechseln';
+  lblPhp.ShowHint := True;
+  lblPhp.OnClick := @PhpClick;
 
   tmr := TTimer.Create(Self);
   tmr.Interval := 2000;
@@ -239,6 +258,7 @@ begin
   end;
   btnStart.Enabled := AState = ssStopped;
   btnStop.Enabled := AState = ssRunning;
+  lblPhp.Enabled := AState in [ssStopped, ssRunning];
   btnSite.Enabled := AState = ssRunning;
   btnAdmin.Enabled := AState = ssRunning;
   Application.ProcessMessages;
@@ -336,6 +356,10 @@ procedure TfrmMain.CheckFiles;
 var
   i: Integer;
 begin
+  FPhpDir := PhpActiveDir(FBase);
+  if not PhpDirValid(FBase, FPhpDir) then
+    Fail('PHP fehlt: ' + FPhpDir + '\php8apache2_4.dll' + LineEnding +
+         'Das Programm muss im entpackten WBCE-Portable-Ordner liegen.');
   for i := Low(REQUIRED_FILES) to High(REQUIRED_FILES) do
     if not FileExists(FBase + REQUIRED_FILES[i]) then
       Fail('Datei fehlt: ' + REQUIRED_FILES[i] + LineEnding +
@@ -349,6 +373,7 @@ begin
   L := TStringList.Create;
   try
     L.LoadFromFile(FBase + ATemplate);
+    L.Text := StringReplace(L.Text, '__PHP__', FBaseFwd + FPhpDir, [rfReplaceAll]);
     L.Text := StringReplace(L.Text, '__BASE__', FBaseFwd, [rfReplaceAll]);
     L.SaveToFile(FBase + ADest);
   finally
@@ -396,6 +421,51 @@ begin
     RunWait('taskkill.exe', ['/F', '/T', '/PID', IntToStr(APid)]);
 end;
 
+procedure TfrmMain.RefreshPhpLabel;
+begin
+  FPhpDir := PhpActiveDir(FBase);
+  if PhpDirValid(FBase, FPhpDir) then
+    lblPhp.Caption := 'PHP ' + PhpVersionOf(FBase, FPhpDir)
+  else
+    lblPhp.Caption := 'PHP fehlt';
+end;
+
+procedure TfrmMain.PhpClick(Sender: TObject);
+begin
+  if not (FState in [ssStopped, ssRunning]) then Exit;
+  if ShowPhpDialog(Self, FBase, FState = ssRunning, @Log) then
+    RefreshPhpLabel;
+end;
+
+{ Kommandozeile: /phpswitch:8.5 oder /phpuse:php-8.3.36 (ohne Oberflaeche, zum Testen) }
+procedure TfrmMain.PhpCli(const AArg: string);
+var
+  offers: TPhpOffers;
+  offer: TPhpOffer;
+  err, pname: string;
+begin
+  try
+    if Pos('/phpuse:', LowerCase(AArg)) = 1 then
+    begin
+      pname := Copy(AArg, 9, 200);
+      if not PhpDirValid(FBase, pname) then Fail('Kein gültiges PHP-Verzeichnis: ' + pname);
+    end
+    else
+    begin
+      if not PhpFetchOffers(offers, err) then Fail(err);
+      if not PhpFindOffer(offers, Copy(AArg, 12, 20), offer) then
+        Fail('Zweig nicht verfügbar: ' + Copy(AArg, 12, 20));
+      pname := PhpInstall(FBase, offer, @Log, err);
+      if pname = '' then Fail(err);
+    end;
+    PhpSetActive(FBase, pname);
+    RefreshPhpLabel;
+    Log('PHP aktiv: ' + pname + ' (' + lblPhp.Caption + ')');
+  except
+    on E: Exception do Log('FEHLER: ' + E.Message);
+  end;
+end;
+
 procedure TfrmMain.DoStart;
 var
   rc: Integer;
@@ -414,14 +484,14 @@ begin
     if PortOpen(DB_PORT) then
       Fail('Port ' + IntToStr(DB_PORT) + ' ist bereits belegt (andere MariaDB/MySQL?).');
 
-    Log('Schreibe Konfiguration (Pfad: ' + FBase + ')');
+    Log('Schreibe Konfiguration (Pfad: ' + FBase + ', PHP: ' + FPhpDir + ')');
     WriteConfig('conf-httpd.template', 'Apache24\conf\httpd.conf');
-    WriteConfig('conf-php.template', 'php\php.ini');
+    WriteConfig('conf-php.template', FPhpDir + '\php.ini');
     WriteConfig('conf-my.template', 'my.ini');
 
     // PHP-Verzeichnis in den DLL-Suchpfad (curl/intl brauchen DLLs neben php.exe)
     Windows.SetEnvironmentVariableA('PATH',
-      PAnsiChar(AnsiString(FBase + 'php;' + SysUtils.GetEnvironmentVariable('PATH'))));
+      PAnsiChar(AnsiString(FBase + FPhpDir + ';' + SysUtils.GetEnvironmentVariable('PATH'))));
 
     if not DirectoryExists(FBase + 'data\mysql') then
     begin
@@ -563,9 +633,16 @@ begin
     SysUtils.DeleteFile(FBase + 'tmp\launcher.pid');
     Log('Bereit. Ordner: ' + FBase);
   end;
+  RefreshPhpLabel;
 
   for i := 1 to ParamCount do
-    if SameText(ParamStr(i), '/start') or SameText(ParamStr(i), '/selftest') then
+    if (Pos('/phpswitch:', LowerCase(ParamStr(i))) = 1) or (Pos('/phpuse:', LowerCase(ParamStr(i))) = 1) then
+    begin
+      PhpCli(ParamStr(i));
+      Close;
+      Break;
+    end
+    else if SameText(ParamStr(i), '/start') or SameText(ParamStr(i), '/selftest') then
     begin
       Application.ProcessMessages;
       DoStart;

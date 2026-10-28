@@ -9,6 +9,8 @@
 #
 # Aufruf:  powershell -ExecutionPolicy Bypass -File .\build-wbce-portable.ps1
 #   -WbceVersion "1.6.9"   WBCE-Release von GitHub laden (Standard: 1.6.9)
+#   -PhpBranch "8.3"       mitgelieferte PHP-Version (Zweig 8.2 .. 8.5); die aktuelle Version
+#                          samt Download-Adresse und SHA-256 liefert php.net (releases.json)
 #   -WbceZip "C:\x.zip"    stattdessen ein vorhandenes WBCE-Archiv verwenden
 #   -WbceVersion ""        ohne -WbceZip: WBCE nicht einpacken
 #   -Clean                 vor dem Bauen Download-Cache (downloads\, adminer.php) sowie
@@ -25,6 +27,7 @@
 param(
     [string]$WbceZip = "",
     [string]$WbceVersion = "1.6.9",
+    [string]$PhpBranch = "8.3",
     [switch]$Clean
 )
 
@@ -36,8 +39,7 @@ if (-not $Base) { $Base = (Get-Location).Path }
 $Downloads = @{
     # Apache Lounge liefert nur mit Referer + User-Agent die ZIP (sonst HTML-Fehlerseite)
     Apache = "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip"
-    # Aktuelle Version liegt unter /releases/, aeltere wandern nach /releases/archives/
-    Php    = "https://downloads.php.net/~windows/releases/php-8.3.36-Win32-vs16-x64.zip"  # Thread-Safe!
+    # PHP: nicht fest verdrahtet, siehe Get-PhpRelease (releases.json von php.net)
     Maria  = "https://archive.mariadb.org/mariadb-11.4.13/winx64-packages/mariadb-11.4.13-winx64.zip"
     Adminer = "https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1.php"
     # Microsoft VC++ Runtime: wird nur entpackt (DLLs), nicht installiert oder mitgeliefert
@@ -52,13 +54,15 @@ if ($Clean) {
     if (Get-Process httpd, mysqld -ErrorAction SilentlyContinue) {
         throw "Apache/MariaDB laufen noch - zuerst stoppen (stop.bat)."
     }
-    foreach ($f in @("downloads\httpd.zip", "downloads\php.zip", "downloads\mariadb.zip",
+    foreach ($f in @("downloads\httpd.zip", "downloads\mariadb.zip",
                      "downloads\vc_redist.x64.exe", "htdocs\adminer.php")) {
         if (Test-Path -LiteralPath "$Base\$f") { Remove-Item -LiteralPath "$Base\$f" -Force }
     }
     if (Test-Path -LiteralPath "$Base\downloads") {
-        Get-ChildItem -LiteralPath "$Base\downloads" -Filter "wbce-*.zip" -File |
-            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+        foreach ($pat in "wbce-*.zip", "php-*.zip") {
+            Get-ChildItem -LiteralPath "$Base\downloads" -Filter $pat -File |
+                ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+        }
     }
     foreach ($d in @("Apache24", "php", "mariadb")) {
         if (Test-Path -LiteralPath "$Base\$d") {
@@ -109,16 +113,40 @@ function Get-File($url, $target) {
     }
 }
 
+function Get-PhpRelease($branch) {
+    $ProgressPreference = "SilentlyContinue"
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $json = Invoke-WebRequest -Uri "https://downloads.php.net/~windows/releases/releases.json" -UseBasicParsing `
+        -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    $m = $json.Content | ConvertFrom-Json
+    $entry = $m.$branch
+    if (-not $entry) { throw "PHP-Zweig $branch steht nicht in releases.json" }
+    $key = $entry.PSObject.Properties.Name | Where-Object { $_ -like "ts-vs*-x64" } | Select-Object -First 1
+    if (-not $key) { throw "Kein Thread-Safe-x64-Build fuer PHP $branch in releases.json" }
+    $zip = $entry.$key.zip
+    return @{ Version = $entry.version; Zip = $zip.path; Sha256 = $zip.sha256.ToLower() }
+}
+
 Write-Host "1/6 Lade Komponenten ..."
 Get-File $Downloads.Apache  "$Base\downloads\httpd.zip"
-Get-File $Downloads.Php     "$Base\downloads\php.zip"
+# PHP (Thread-Safe, x64): Version, Datei und SHA-256 aus dem offiziellen Manifest.
+# Der Cache-Dateiname enthaelt die Version, ein neues Release wird also automatisch geladen.
+$phpRel = Get-PhpRelease $PhpBranch
+Write-Host "   PHP $($phpRel.Version) (Zweig $PhpBranch)"
+$phpZip = "$Base\downloads\$($phpRel.Zip)"
+Get-File ("https://downloads.php.net/~windows/releases/" + $phpRel.Zip) $phpZip
+$phpHash = (Get-FileHash -LiteralPath $phpZip -Algorithm SHA256).Hash.ToLower()
+if ($phpHash -ne $phpRel.Sha256) {
+    Remove-Item -LiteralPath $phpZip -Force
+    throw "SHA-256 von $($phpRel.Zip) stimmt nicht mit php.net ueberein (erwartet $($phpRel.Sha256), erhalten $phpHash)"
+}
 Get-File $Downloads.Maria   "$Base\downloads\mariadb.zip"
 Get-File $Downloads.Adminer  "$Base\htdocs\adminer.php"
 
 # --- Entpacken ----------------------------------------------------------------
 Write-Host "2/6 Entpacke ..."
 Expand-Archive -Path "$Base\downloads\httpd.zip"   -DestinationPath "$Base\_tmp_apache" -Force
-Expand-Archive -Path "$Base\downloads\php.zip"     -DestinationPath "$Base\_tmp_php"    -Force
+Expand-Archive -Path $phpZip                      -DestinationPath "$Base\_tmp_php"    -Force
 Expand-Archive -Path "$Base\downloads\mariadb.zip"  -DestinationPath "$Base\_tmp_maria"  -Force
 
 # Apache: Zip enthaelt Ordner Apache24
@@ -212,6 +240,24 @@ foreach ($dll in $vcDlls) {
     Write-Host ("   {0} {1} ({2})" -f $dll, $ver, $vcFrom)
 }
 Remove-Item -LiteralPath $vcDir -Recurse -Force
+
+# --- Bundle verkleinern: Debug-Symbole, Entwicklerdateien, ungenutzte Werkzeuge ----
+# (alles nur Entwickler-/Backup-Zubehoer; Server, Client- und Pruefwerkzeuge bleiben)
+Write-Host "   Entferne Debug- und Entwicklerdateien ..."
+$trimFiles = @(
+    "mariadb\bin\*.pdb", "mariadb\bin\*.lib", "mariadb\lib\*.lib", "mariadb\lib\*.pdb",
+    "mariadb\bin\mariadb-backup.exe", "mariadb\bin\mariabackup.exe",
+    "mariadb\bin\mariadb-ldb.exe", "mariadb\bin\mysql_ldb.exe", "mariadb\bin\sst_dump.exe",
+    "Apache24\lib\*.lib", "Apache24\lib\*.exp", "Apache24\bin\*.pdb",
+    "php\php8embed.lib", "php\*.pdb"
+)
+foreach ($pat in $trimFiles) {
+    Get-ChildItem -Path "$Base\$pat" -File -ErrorAction SilentlyContinue | Remove-Item -Force
+}
+foreach ($dir in "mariadb\include", "Apache24\include", "php\dev") {
+    if (Test-Path -LiteralPath "$Base\$dir") { Remove-Item -LiteralPath "$Base\$dir" -Recurse -Force }
+}
+
 # --- WBCE optional einpacken --------------------------------------------------
 if (-not $WbceZip -and $WbceVersion) {
     $WbceZip = "$Base\downloads\wbce-$WbceVersion.zip"
@@ -242,7 +288,8 @@ if ($WbceZip -and (Test-Path $WbceZip)) {
 # --- Konfig-Templates schreiben ----------------------------------------------
 Write-Host "4/6 Schreibe Konfiguration ..."
 
-# httpd.conf: __BASE__ wird von start.bat bei jedem Start durch den echten Pfad ersetzt.
+# httpd.conf: __BASE__ (Programmordner) und __PHP__ (aktives PHP-Verzeichnis) werden von
+# Launcher bzw. start.bat bei jedem Start durch die echten Pfade ersetzt.
 $httpd = @"
 ServerRoot "__BASE__Apache24"
 Listen 127.0.0.1:4443
@@ -260,9 +307,9 @@ LoadModule rewrite_module         modules/mod_rewrite.so
 LoadModule alias_module           modules/mod_alias.so
 LoadModule autoindex_module       modules/mod_autoindex.so
 
-LoadFile "__BASE__php/php8ts.dll"
-LoadModule php_module "__BASE__php/php8apache2_4.dll"
-PHPIniDir "__BASE__php"
+LoadFile "__PHP__/php8ts.dll"
+LoadModule php_module "__PHP__/php8apache2_4.dll"
+PHPIniDir "__PHP__"
 
 TypesConfig conf/mime.types
 DirectoryIndex index.php index.html
@@ -283,7 +330,7 @@ LogLevel warn
 # php.ini: ebenfalls __BASE__-Ersetzung
 $phpini = @"
 [PHP]
-extension_dir="__BASE__php\ext"
+extension_dir="__PHP__/ext"
 extension=curl
 extension=gd
 extension=intl
@@ -331,12 +378,16 @@ set BASE=%~dp0
 cd /d "%BASE%"
 if not exist tmp mkdir tmp
 
+rem Aktives PHP-Verzeichnis (Standard: php; der Launcher kann auf php-8.x.y wechseln)
+set PHPDIR=php
+if exist "%BASE%php-active.txt" set /p PHPDIR=<"%BASE%php-active.txt"
+
 rem PHP-Verzeichnis in den DLL-Suchpfad (curl/intl brauchen libssh2, ICU usw. neben php.exe)
-set "PATH=%BASE%php;%PATH%"
+set "PATH=%BASE%%PHPDIR%;%PATH%"
 
 rem Konfigs mit echtem Pfad erzeugen (Laufwerksbuchstabe ist egal)
-powershell -NoProfile -Command "(Get-Content '%BASE%conf-httpd.template') -replace '__BASE__','%BASE:\=/%' | Set-Content '%BASE%Apache24\conf\httpd.conf'"
-powershell -NoProfile -Command "(Get-Content '%BASE%conf-php.template') -replace '__BASE__','%BASE:\=/%' | Set-Content '%BASE%php\php.ini'"
+powershell -NoProfile -Command "(Get-Content '%BASE%conf-httpd.template') -replace '__PHP__','%BASE:\=/%%PHPDIR%' -replace '__BASE__','%BASE:\=/%' | Set-Content '%BASE%Apache24\conf\httpd.conf'"
+powershell -NoProfile -Command "(Get-Content '%BASE%conf-php.template') -replace '__PHP__','%BASE:\=/%%PHPDIR%' -replace '__BASE__','%BASE:\=/%' | Set-Content '%BASE%%PHPDIR%\php.ini'"
 powershell -NoProfile -Command "(Get-Content '%BASE%conf-my.template') -replace '__BASE__','%BASE:\=/%' | Set-Content '%BASE%my.ini'"
 
 rem Datenbank beim ersten Start initialisieren
@@ -346,12 +397,12 @@ if not exist "%BASE%data\mysql" (
 )
 
 rem MariaDB starten
-start "MariaDB" /min "%BASE%mariadb\bin\mysqld.exe" --defaults-file="%BASE%my.ini"
+powershell -NoProfile -Command "Start-Process -WindowStyle Hidden -FilePath 'mariadb\bin\mysqld.exe' -ArgumentList '--defaults-file=my.ini'"
 
 rem Kurz warten, DB anlegen falls fehlt, dann Apache
 timeout /t 3 /nobreak >nul
 "%BASE%mariadb\bin\mariadb.exe" --port=3311 -u root -e "CREATE DATABASE IF NOT EXISTS wbce CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-start "Apache" /min "%BASE%Apache24\bin\httpd.exe"
+powershell -NoProfile -Command "Start-Process -WindowStyle Hidden -FilePath 'Apache24\bin\httpd.exe'"
 
 echo WBCE Portable laeuft: http://localhost:4443/wbce
 start http://localhost:4443/wbce
@@ -410,7 +461,21 @@ Benutzung
    werden. Beim Schliessen des Fensters wird bei laufendem Server automatisch
    gefragt, ob gestoppt werden soll.
 
-Ohne die EXE (Notbehelf): start.bat / stop.bat.
+PHP-Version wechseln: in der EXE unten rechts auf "PHP x.y.z" klicken (nur bei
+gestopptem Server). Weitere Versionen (8.2 bis 8.5) werden von php.net geladen
+und per SHA-256 geprueft; die Daten bleiben unveraendert.
+
+Ohne die EXE (Notbehelf): start.bat / stop.bat. Apache und MariaDB laufen dann
+unsichtbar im Hintergrund (kein Konsolenfenster); beendet wird mit stop.bat.
+
+Windows blockiert die EXE ("Der Computer wurde durch Windows geschuetzt" oder
+sie laesst sich gar nicht starten)?
+  Ursache: Dateien aus dem Internet tragen eine Markierung ("Mark of the Web").
+  Loesung: BEVOR die ZIP entpackt wird: Rechtsklick auf die ZIP -> Eigenschaften
+           -> unten "Zulassen" ankreuzen -> OK. Danach entpacken.
+  Nachtraeglich: in PowerShell
+           Get-ChildItem -Recurse "C:\Pfad\zu\WBCE-Portable" | Unblock-File
+  Bei der Meldung von SmartScreen: "Weitere Informationen" -> "Trotzdem ausfuehren".
 
 Adressen
 --------
