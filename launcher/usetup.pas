@@ -15,7 +15,7 @@ unit usetup;
 interface
 
 uses
-  Classes, SysUtils, Forms, Controls, Graphics, StdCtrls, Dialogs, Process, Windows, uphp;
+  Classes, SysUtils, Forms, Controls, Graphics, StdCtrls, Dialogs, Process, Windows, uphp, uwbce;
 
 type
   TSetupData = record
@@ -34,6 +34,7 @@ function RunSetup(const ABase: string; const D: TSetupData; ALog: TLogProc;
   out AErr: string): Boolean;
 function ShowSetupDialog(AOwner: TComponent; const ABase: string;
   out D: TSetupData): Boolean;
+procedure PreviewSetupDialog(AOwner: TComponent; const ABase, AFile: string);
 
 implementation
 
@@ -409,10 +410,11 @@ type
     edTitle, edUser, edMail, edPass, edPass2: TEdit;
     chkDemo: TCheckBox;
     lblRules: TLabel;
-    btnGen: TButton;
-    btnOk: TButton;
-    btnCancel: TButton;
+    btnGen: TWbceButton;
+    btnOk: TWbceButton;
+    btnCancel: TWbceButton;
     procedure GenClick(Sender: TObject);
+    procedure CancelClick(Sender: TObject);
     procedure OkClick(Sender: TObject);
   public
     constructor CreateDlg(AOwner: TComponent; const ABase: string);
@@ -422,6 +424,8 @@ type
 constructor TSetupForm.CreateDlg(AOwner: TComponent; const ABase: string);
 var
   y: Integer;
+  hdr: TWbceHeader;
+  info: TWbceBanner;
 
   function AddRow(const ACaption: string; out AEdit: TEdit): TEdit;
   var
@@ -429,13 +433,14 @@ var
   begin
     L := TLabel.Create(Self);
     L.Parent := Self;
-    L.SetBounds(16, y + 4, 150, 18);
+    L.SetBounds(18, y, 440, 16);
     L.Caption := ACaption;
+    L.Font.Style := [fsBold];
     AEdit := TEdit.Create(Self);
     AEdit.Parent := Self;
-    AEdit.SetBounds(172, y, 252, 24);
+    AEdit.SetBounds(18, y + 18, 444, 26);
     Result := AEdit;
-    Inc(y, 32);
+    Inc(y, 54);
   end;
 
 begin
@@ -444,24 +449,34 @@ begin
   Caption := 'WBCE automatisch einrichten';
   BorderStyle := bsDialog;
   Position := poOwnerFormCenter;
-  ClientWidth := 440;
-  ClientHeight := 368;
+  ClientWidth := 480;
+  ClientHeight := 620;
+  WbceStyleForm(Self);
 
-  with TLabel.Create(Self) do
-  begin
-    Parent := Self;
-    SetBounds(16, 12, 408, 50);
-    AutoSize := False;
-    WordWrap := True;
-    Caption := 'Es wird ein Administrator-Zugang für WBCE angelegt. Die Datenbank bekommt ' +
-               'dabei automatisch einen eigenen, zufälligen Benutzer und ein zufälliges Passwort.';
-  end;
+  hdr := TWbceHeader.Create(Self);
+  hdr.Parent := Self;
+  hdr.Compact := True;
+  hdr.SetBounds(0, 0, 480, 52);
+  hdr.Title := 'Administrator-Zugang anlegen';
 
-  y := 72;
+  info := TWbceBanner.Create(Self);
+  info.Parent := Self;
+  info.SetBounds(18, 66, 444, 52);
+  info.Show(bkInfo, 'Die Datenbank bekommt automatisch einen eigenen Benutzer mit zufälligem ' +
+    'Passwort. Gespeichert wird er nur in der Datei config.php.');
+
+  y := 132;
   AddRow('Name der Website', edTitle);
   AddRow('Admin-Benutzername', edUser);
   AddRow('E-Mail-Adresse', edMail);
   AddRow('Passwort', edPass);
+  edPass.Width := 300;
+  btnGen := TWbceButton.Create(Self);
+  btnGen.Parent := Self;
+  btnGen.Kind := wbSecondary;
+  btnGen.SetBounds(326, edPass.Top - 1, 136, 28);
+  btnGen.Caption := 'Zufallspasswort';
+  btnGen.OnClick := @GenClick;
   AddRow('Passwort wiederholen', edPass2);
   edPass.PasswordChar := '*';
   edPass2.PasswordChar := '*';
@@ -470,45 +485,42 @@ begin
 
   lblRules := TLabel.Create(Self);
   lblRules.Parent := Self;
-  lblRules.SetBounds(16, y, 408, 34);
+  lblRules.SetBounds(18, y - 4, 444, 34);
   lblRules.AutoSize := False;
   lblRules.WordWrap := True;
-  lblRules.Font.Color := clGray;
+  lblRules.Font.Color := clWbMuted;
   lblRules.Caption := 'Passwort: mindestens 12 Zeichen; erlaubt sind Buchstaben, Ziffern und ' +
                       '_ - ! # * + @ $ &  :';
-  Inc(y, 40);
-
-  btnGen := TButton.Create(Self);
-  btnGen.Parent := Self;
-  btnGen.SetBounds(16, y, 200, 26);
-  btnGen.Caption := 'Zufallspasswort erzeugen';
-  btnGen.OnClick := @GenClick;
-  Inc(y, 36);
+  Inc(y, 38);
 
   chkDemo := TCheckBox.Create(Self);
   chkDemo.Parent := Self;
-  chkDemo.SetBounds(16, y, 408, 22);
+  chkDemo.SetBounds(18, y, 444, 22);
   chkDemo.Caption := 'Demodaten einrichten';
   chkDemo.Checked := True;
   chkDemo.Visible := DemoAvailable(ABase);
   if chkDemo.Visible then Inc(y, 30);
 
-  ClientHeight := y + 50;
+  ClientHeight := y + 66;
 
-  btnOk := TButton.Create(Self);
+  btnOk := TWbceButton.Create(Self);
   btnOk.Parent := Self;
-  btnOk.SetBounds(16, ClientHeight - 42, 200, 32);
+  btnOk.SetBounds(18, ClientHeight - 54, 218, 38);
   btnOk.Caption := 'Einrichten';
-  btnOk.Default := True;
   btnOk.OnClick := @OkClick;
 
-  btnCancel := TButton.Create(Self);
+  btnCancel := TWbceButton.Create(Self);
   btnCancel.Parent := Self;
-  btnCancel.SetBounds(224, ClientHeight - 42, 200, 32);
+  btnCancel.Kind := wbSecondary;
+  btnCancel.SetBounds(244, ClientHeight - 54, 218, 38);
   btnCancel.Caption := 'Installer im Browser benutzen';
-  btnCancel.ModalResult := mrCancel;
+  btnCancel.OnClick := @CancelClick;
 end;
 
+procedure TSetupForm.CancelClick(Sender: TObject);
+begin
+  ModalResult := mrCancel;
+end;
 procedure TSetupForm.GenClick(Sender: TObject);
 var
   p: string;
@@ -559,6 +571,20 @@ begin
   try
     Result := F.ShowModal = mrOK;
     if Result then D := F.Data;
+  finally
+    F.Free;
+  end;
+end;
+
+procedure PreviewSetupDialog(AOwner: TComponent; const ABase, AFile: string);
+var
+  F: TSetupForm;
+begin
+  F := TSetupForm.CreateDlg(AOwner, ABase);
+  try
+    F.edMail.Text := 'beispiel@example.com';
+    F.GenClick(nil);
+    WbcePreviewForm(F, AFile);
   finally
     F.Free;
   end;

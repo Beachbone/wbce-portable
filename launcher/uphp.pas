@@ -11,7 +11,7 @@ unit uphp;
 interface
 
 uses
-  Classes, SysUtils, Forms, Controls, Graphics, StdCtrls, Dialogs, Process, Windows, FileUtil,
+  Classes, SysUtils, Forms, Controls, Graphics, StdCtrls, Dialogs, Process, Windows, FileUtil, uwbce,
   fpjson, jsonparser;
 
 type
@@ -43,6 +43,7 @@ function PhpInstall(const ABase: string; const AOffer: TPhpOffer; ALog: TLogProc
   out AErr: string): string;
 function ShowPhpDialog(AOwner: TComponent; const ABase: string;
   AServerRunning: Boolean; ALog: TLogProc): Boolean;
+procedure PreviewPhpDialog(AOwner: TComponent; const ABase, AFile: string);
 
 implementation
 
@@ -429,12 +430,13 @@ type
     lblInfo: TLabel;
     lst: TListBox;
     lblHint: TLabel;
-    btnApply: TButton;
-    btnClose: TButton;
+    btnApply: TWbceButton;
+    btnClose: TWbceButton;
     procedure FillList;
     procedure UpdateButtons;
     procedure ListClick(Sender: TObject);
     procedure ApplyClick(Sender: TObject);
+    procedure CloseClick(Sender: TObject);
     procedure CloseQueryEvent(Sender: TObject; var CanClose: Boolean);
   public
     constructor CreateDlg(AOwner: TComponent; const ABase: string;
@@ -446,6 +448,8 @@ type
 
 constructor TPhpForm.CreateDlg(AOwner: TComponent; const ABase: string;
   ARunning: Boolean; ALog: TLogProc);
+var
+  hdr: TWbceHeader;
 begin
   inherited CreateNew(AOwner);
   FBase := ABase;
@@ -456,41 +460,55 @@ begin
   Caption := 'PHP-Version';
   BorderStyle := bsDialog;
   Position := poOwnerFormCenter;
-  ClientWidth := 440;
-  ClientHeight := 292;
+  ClientWidth := 480;
+  ClientHeight := 400;
   OnCloseQuery := @CloseQueryEvent;
+  WbceStyleForm(Self);
+
+  hdr := TWbceHeader.Create(Self);
+  hdr.Parent := Self;
+  hdr.Compact := True;
+  hdr.SetBounds(0, 0, 480, 52);
+  hdr.Title := 'PHP-Version wechseln';
 
   lblInfo := TLabel.Create(Self);
   lblInfo.Parent := Self;
-  lblInfo.SetBounds(16, 12, 408, 34);
+  lblInfo.SetBounds(18, 64, 444, 20);
   lblInfo.AutoSize := False;
   lblInfo.WordWrap := True;
-  lblInfo.Caption := 'Installierte und bei php.net verfügbare PHP-Versionen (thread safe, x64).';
+  lblInfo.Font.Color := clWbMuted;
+  lblInfo.Caption := 'Installierte und bei php.net verfügbare Versionen (thread safe, x64).';
 
   lst := TListBox.Create(Self);
   lst.Parent := Self;
-  lst.SetBounds(16, 52, 408, 150);
+  lst.SetBounds(18, 90, 444, 170);
+  lst.ItemHeight := 24;
   lst.OnClick := @ListClick;
 
   lblHint := TLabel.Create(Self);
   lblHint.Parent := Self;
-  lblHint.SetBounds(16, 210, 408, 32);
+  lblHint.SetBounds(18, 270, 444, 54);
   lblHint.AutoSize := False;
   lblHint.WordWrap := True;
-  lblHint.Font.Color := clGray;
+  lblHint.Font.Color := clWbMuted;
 
-  btnApply := TButton.Create(Self);
+  btnApply := TWbceButton.Create(Self);
   btnApply.Parent := Self;
-  btnApply.SetBounds(16, 250, 250, 30);
+  btnApply.SetBounds(18, 340, 300, 38);
   btnApply.OnClick := @ApplyClick;
 
-  btnClose := TButton.Create(Self);
+  btnClose := TWbceButton.Create(Self);
   btnClose.Parent := Self;
-  btnClose.SetBounds(284, 250, 140, 30);
+  btnClose.Kind := wbSecondary;
+  btnClose.SetBounds(326, 340, 136, 38);
   btnClose.Caption := 'Schließen';
-  btnClose.ModalResult := mrCancel;
+  btnClose.OnClick := @CloseClick;
 end;
 
+procedure TPhpForm.CloseClick(Sender: TObject);
+begin
+  if not FBusy then ModalResult := mrCancel;
+end;
 destructor TPhpForm.Destroy;
 begin
   FKind.Free;
@@ -554,7 +572,8 @@ begin
       if j > 0 then baseVer := Copy(baseVer, 1, j - 1);
       known := vers.IndexOf(baseVer) >= 0;
       if known then Continue;
-      lst.Items.Add('PHP ' + FOffers[i].Version + '   (Download, ' + FOffers[i].Size + ')');
+      lst.Items.Add('PHP ' + FOffers[i].Version + '   (Download, ' +
+        StringReplace(StringReplace(FOffers[i].Size, '.', ',', []), 'MB', ' MB', []) + ')');
       FKind.Add('O:' + IntToStr(i));
     end;
   finally
@@ -649,6 +668,19 @@ begin
     F.LoadOffers;
     F.ShowModal;
     Result := F.Changed;
+  finally
+    F.Free;
+  end;
+end;
+
+procedure PreviewPhpDialog(AOwner: TComponent; const ABase, AFile: string);
+var
+  F: TPhpForm;
+begin
+  F := TPhpForm.CreateDlg(AOwner, ABase, False, nil);
+  try
+    F.LoadOffers;
+    WbcePreviewForm(F, AFile);
   finally
     F.Free;
   end;

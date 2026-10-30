@@ -16,10 +16,10 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, ExtCtrls,
-  Process, Sockets, LCLIntf, Windows, uphp, usetup, ulogo;
+  Process, Sockets, LCLIntf, Windows, uphp, usetup, uwbce;
 
 const
-  APP_VERSION = '0.4.0';
+  APP_VERSION = '0.5.0';
   HTTP_PORT = 4443;
   DB_PORT   = 3311;
   APP_URL   = 'http://localhost:4443/wbce';
@@ -42,15 +42,15 @@ type
     FPhpDir: string;      // aktives PHP-Verzeichnis (php oder php-8.x.y), ohne Backslash
     lblPhp: TLabel;
     lblSetup: TLabel;
-    imgLogo: TImage;
-    FLogoOk: Boolean;
-    shpLamp: TShape;
-    lblStatus: TLabel;
-    lblHint: TLabel;
-    btnStart: TButton;
-    btnStop: TButton;
-    btnSite: TButton;
-    btnAdmin: TButton;
+    header: TWbceHeader;
+    status: TWbceStatus;
+    steps: TWbceSteps;
+    banner: TWbceBanner;
+    lblLog: TLabel;
+    btnStart: TWbceButton;
+    btnStop: TWbceButton;
+    btnSite: TWbceButton;
+    btnAdmin: TWbceButton;
     memLog: TMemo;
     tmr: TTimer;
     function PortOpen(APort: Integer): Boolean;
@@ -63,7 +63,11 @@ type
     procedure Fail(const AMsg: string);
     procedure SetState(AState: TServerState);
     procedure CheckFiles;
+    procedure Relayout;
+    procedure ShowBanner(AKind: TWbceBannerKind; const AText: string);
+    procedure HideBanner;
     procedure UpdateSetupLabel;
+    procedure PreviewMode(const AMode, AFile: string);
     function DoSetup(const D: TSetupData; out AErr: string): Boolean;
     procedure OfferSetup(AFromStart: Boolean);
     procedure SetupClick(Sender: TObject);
@@ -130,101 +134,108 @@ begin
   BorderStyle := bsSingle;
   BorderIcons := [biSystemMenu, biMinimize];
   Position := poScreenCenter;
-  ClientWidth := 460;
-  ClientHeight := 352;
+  ClientWidth := 520;
+  ClientHeight := 660;
+  WbceStyleForm(Self);
   OnCloseQuery := @FormCloseQueryEvent;
   OnShow := @FormShowEvent;
 
-  shpLamp := TShape.Create(Self);
-  shpLamp.Parent := Self;
-  shpLamp.Shape := stCircle;
-  shpLamp.SetBounds(16, 16, 28, 28);
-  shpLamp.Pen.Color := clGray;
+  header := TWbceHeader.Create(Self);
+  header.Parent := Self;
+  header.SetBounds(0, 0, 520, 64);
+  header.Title := 'WBCE Portable';
+  header.Subtitle := 'Apache · PHP · MariaDB aus einem Ordner';
+  header.RightText := 'Version ' + APP_VERSION;
 
-  lblStatus := TLabel.Create(Self);
-  lblStatus.Parent := Self;
-  lblStatus.SetBounds(56, 14, 390, 32);
-  lblStatus.Font.Size := 14;
-  lblStatus.Font.Style := [fsBold];
-  lblStatus.Layout := tlCenter;
+  status := TWbceStatus.Create(Self);
+  status.Parent := Self;
+  status.SetBounds(18, 80, 484, 66);
 
-  btnStart := TButton.Create(Self);
+  btnStart := TWbceButton.Create(Self);
   btnStart.Parent := Self;
-  btnStart.SetBounds(16, 60, 205, 40);
+  btnStart.SetBounds(18, 158, 237, 40);
   btnStart.Caption := 'Server starten';
   btnStart.OnClick := @StartClick;
 
-  btnStop := TButton.Create(Self);
+  btnStop := TWbceButton.Create(Self);
   btnStop.Parent := Self;
-  btnStop.SetBounds(239, 60, 205, 40);
+  btnStop.SetBounds(265, 158, 237, 40);
   btnStop.Caption := 'Server stoppen';
   btnStop.OnClick := @StopClick;
 
-  btnSite := TButton.Create(Self);
+  btnSite := TWbceButton.Create(Self);
   btnSite.Parent := Self;
-  btnSite.SetBounds(16, 108, 205, 30);
+  btnSite.Kind := wbSecondary;
+  btnSite.SetBounds(18, 206, 237, 32);
   btnSite.Caption := 'Website öffnen';
   btnSite.OnClick := @SiteClick;
 
-  btnAdmin := TButton.Create(Self);
+  btnAdmin := TWbceButton.Create(Self);
   btnAdmin.Parent := Self;
-  btnAdmin.SetBounds(239, 108, 205, 30);
+  btnAdmin.Kind := wbSecondary;
+  btnAdmin.SetBounds(265, 206, 237, 32);
   btnAdmin.Caption := 'Administration öffnen';
   btnAdmin.OnClick := @AdminClick;
 
-  lblHint := TLabel.Create(Self);
-  lblHint.Parent := Self;
-  lblHint.SetBounds(16, 148, 428, 16);
-  lblHint.Font.Color := clGray;
-  lblHint.Caption := 'Vor dem Abziehen des Sticks den Server stoppen!';
+  banner := TWbceBanner.Create(Self);
+  banner.Parent := Self;
+  banner.SetBounds(18, 250, 484, 56);
+
+  steps := TWbceSteps.Create(Self);
+  steps.Parent := Self;
+  steps.AddStep('Dateien prüfen');
+  steps.AddStep('Datenbank starten (MariaDB)');
+  steps.AddStep('Webserver starten (Apache)');
+  steps.AddStep('WBCE einrichten');
+  steps.AddStep('Seite öffnen');
+  steps.SetBounds(18, 250, 484, steps.NeededHeight);
+
+  lblLog := TLabel.Create(Self);
+  lblLog.Parent := Self;
+  lblLog.AutoSize := False;
+  lblLog.SetBounds(18, 450, 484, 16);
+  lblLog.Caption := 'PROTOKOLL';
+  lblLog.Font.Size := 8;
+  lblLog.Font.Style := [fsBold];
+  lblLog.Font.Color := clWbMuted;
 
   memLog := TMemo.Create(Self);
   memLog.Parent := Self;
-  memLog.SetBounds(16, 172, 428, 142);
+  memLog.SetBounds(18, 468, 484, 130);
   memLog.ReadOnly := True;
   memLog.ScrollBars := ssAutoVertical;
+  memLog.Font.Name := 'Consolas';
   memLog.Font.Size := 9;
+  memLog.Color := clWbCard;
+  memLog.BorderStyle := bsSingle;
 
   lblSetup := TLabel.Create(Self);
   lblSetup.Parent := Self;
   lblSetup.AutoSize := False;
-  lblSetup.SetBounds(16, 324, 220, 18);
-  lblSetup.Font.Color := clGray;
-  lblSetup.Font.Style := [fsUnderline];
-  lblSetup.Cursor := crHandPoint;
+  lblSetup.SetBounds(18, 628, 260, 18);
   lblSetup.Caption := 'WBCE automatisch einrichten ...';
   lblSetup.Hint := 'Administrator-Zugang anlegen und WBCE ohne Browser-Installer einrichten';
   lblSetup.ShowHint := True;
   lblSetup.Visible := False;
   lblSetup.OnClick := @SetupClick;
+  WbceStyleLink(lblSetup);
 
   lblPhp := TLabel.Create(Self);
   lblPhp.Parent := Self;
   lblPhp.AutoSize := False;
-  lblPhp.SetBounds(244, 324, 200, 18);
+  lblPhp.SetBounds(302, 628, 200, 18);
   lblPhp.Alignment := taRightJustify;
-  lblPhp.Font.Color := clGray;
-  lblPhp.Font.Style := [fsUnderline];
-  lblPhp.Cursor := crHandPoint;
   lblPhp.Hint := 'PHP-Version anzeigen oder wechseln';
   lblPhp.ShowHint := True;
   lblPhp.OnClick := @PhpClick;
-
-  // Kopfbereich mit WBCE-Logo: alle bisherigen Elemente nach unten schieben
-  for i := 0 to ControlCount - 1 do
-    Controls[i].Top := Controls[i].Top + LOGO_HEIGHT + 16;
-  ClientHeight := ClientHeight + LOGO_HEIGHT + 16;
-  imgLogo := TImage.Create(Self);
-  imgLogo.Parent := Self;
-  imgLogo.SetBounds(16, 10, LOGO_WIDTH, LOGO_HEIGHT);
-  FLogoOk := LoadLogo(imgLogo);
+  WbceStyleLink(lblPhp);
 
   tmr := TTimer.Create(Self);
   tmr.Interval := 2000;
   tmr.OnTimer := @TimerTick;
   tmr.Enabled := True;
 
-  SetState(ssStopped);
+  Relayout;  SetState(ssStopped);
 end;
 
 procedure TfrmMain.Pause(AMs: Integer);
@@ -267,33 +278,55 @@ begin
   FState := AState;
   case AState of
     ssStopped:
-      begin
-        shpLamp.Brush.Color := $0000C0;   // rot (BGR)
-        lblStatus.Caption := 'Server gestoppt';
-      end;
+      status.SetStatus(clWbRed, 'Server gestoppt', 'Zum Starten auf „Server starten“ klicken.');
     ssStarting:
-      begin
-        shpLamp.Brush.Color := $00A5FF;   // orange
-        lblStatus.Caption := 'Server startet ...';
-      end;
+      status.SetStatus(clWbOrange, 'Server startet ...', 'Datenbank und Webserver werden gestartet.');
     ssRunning:
-      begin
-        shpLamp.Brush.Color := $50B000;   // gruen
-        lblStatus.Caption := 'Server läuft';
-      end;
+      status.SetStatus(clWbGreen, 'Server läuft',
+        APP_URL + '   ·   Vor dem Abziehen des Sticks stoppen!');
     ssStopping:
-      begin
-        shpLamp.Brush.Color := $00A5FF;
-        lblStatus.Caption := 'Server wird gestoppt ...';
-      end;
+      status.SetStatus(clWbOrange, 'Server wird gestoppt ...', 'MariaDB wird sauber heruntergefahren.');
   end;
   btnStart.Enabled := AState = ssStopped;
   btnStop.Enabled := AState = ssRunning;
-  lblPhp.Enabled := AState in [ssStopped, ssRunning];
-  UpdateSetupLabel;
   btnSite.Enabled := AState = ssRunning;
   btnAdmin.Enabled := AState = ssRunning;
+  lblPhp.Enabled := AState in [ssStopped, ssRunning];
+  UpdateSetupLabel;
   Application.ProcessMessages;
+end;
+
+{ Elemente von oben nach unten anordnen; der Hinweisbalken schiebt die Liste nach unten }
+procedure TfrmMain.Relayout;
+var
+  y: Integer;
+begin
+  y := 250;
+  if banner.Visible then
+  begin
+    banner.Top := y;
+    y := y + banner.Height + 12;
+  end;
+  steps.Top := y;
+  y := y + steps.Height + 12;
+  lblLog.Top := y;
+  y := y + 18;
+  memLog.Top := y;
+  memLog.Height := ClientHeight - 38 - y;
+  lblSetup.Top := ClientHeight - 28;
+  lblPhp.Top := ClientHeight - 28;
+end;
+
+procedure TfrmMain.ShowBanner(AKind: TWbceBannerKind; const AText: string);
+begin
+  banner.Show(AKind, AText);
+  Relayout;
+end;
+
+procedure TfrmMain.HideBanner;
+begin
+  banner.Visible := False;
+  Relayout;
 end;
 
 function TfrmMain.PortOpen(APort: Integer): Boolean;
@@ -453,6 +486,52 @@ begin
     RunWait('taskkill.exe', ['/F', '/T', '/PID', IntToStr(APid)]);
 end;
 
+{ Entwicklerhilfe: Fenster in einem Beispielzustand als BMP abbilden (Umgebungsvariable
+  WBCE_PREVIEW_MODE: bereit, startet, richtet, fertig, fehler) }
+procedure TfrmMain.PreviewMode(const AMode, AFile: string);
+begin
+  if AMode = 'startet' then
+  begin
+    SetState(ssStarting);
+    steps.SetStep(0, wsDone, 'PHP: php');
+    steps.SetStep(1, wsDone, 'Port ' + IntToStr(DB_PORT));
+    steps.SetStep(2, wsActive, 'Port ' + IntToStr(HTTP_PORT));
+    Log('Prüfe Dateien ...');
+    Log('Starte MariaDB (Port ' + IntToStr(DB_PORT) + ') ...');
+    Log('Starte Apache (Port ' + IntToStr(HTTP_PORT) + ') ...');
+  end
+  else if (AMode = 'richtet') or (AMode = 'fertig') or (AMode = 'fehler') then
+  begin
+    FState := ssRunning;
+    SetState(ssRunning);
+    steps.SetStep(0, wsDone, 'PHP: php');
+    steps.SetStep(1, wsDone, 'Port ' + IntToStr(DB_PORT));
+    steps.SetStep(2, wsDone, 'Port ' + IntToStr(HTTP_PORT));
+    Log('Server läuft: ' + APP_URL);
+    if AMode = 'richtet' then
+    begin
+      steps.SetStep(3, wsActive, 'Admin-Zugang wird angelegt');
+      status.SetStatus(clWbOrange, 'WBCE wird eingerichtet ...', 'Bitte einen Moment warten.');
+    end
+    else if AMode = 'fertig' then
+    begin
+      steps.SetStep(3, wsDone, 'Admin „admin“ angelegt');
+      steps.SetStep(4, wsDone, 'Anmeldeseite geöffnet');
+      ShowBanner(bkOk, 'WBCE ist eingerichtet. Anmeldung in der Administration mit dem Benutzer „admin“ und dem gewählten Passwort.');
+      Log('WBCE ist eingerichtet. Anmeldung: ' + ADMIN_URL);
+    end
+    else
+    begin
+      steps.SetStep(3, wsError, 'fehlgeschlagen');
+      ShowBanner(bkError, 'Die Einrichtung ist fehlgeschlagen: e20: Konfigurationsdatei nicht beschreibbar. Alles wurde zurückgesetzt; der Installer im Browser kann benutzt werden.');
+      Log('FEHLER bei der Einrichtung: e20 ...');
+    end;
+  end;
+  UpdateSetupLabel;
+  WbcePreviewForm(Self, AFile);
+  FState := ssStopped;   // Close soll nicht nachfragen
+end;
+
 procedure TfrmMain.UpdateSetupLabel;
 begin
   lblSetup.Visible := (FState = ssRunning) and not WbceInstalled(FBase);
@@ -468,6 +547,9 @@ begin
     Exit;
   end;
   Log('Richte WBCE ein ...');
+  HideBanner;
+  steps.SetStep(3, wsActive, 'Admin-Zugang wird angelegt');
+  status.SetStatus(clWbOrange, 'WBCE wird eingerichtet ...', 'Bitte einen Moment warten.');
   Enabled := False;
   Screen.Cursor := crHourGlass;
   try
@@ -476,10 +558,22 @@ begin
     Screen.Cursor := crDefault;
     Enabled := True;
   end;
+  status.SetStatus(clWbGreen, 'Server läuft',
+    APP_URL + '   ·   Vor dem Abziehen des Sticks stoppen!');
   if Result then
-    Log('WBCE ist eingerichtet. Anmeldung: ' + ADMIN_URL + '  (Benutzer: ' + D.User + ')')
+  begin
+    steps.SetStep(3, wsDone, 'Admin „' + D.User + '“ angelegt');
+    ShowBanner(bkOk, 'WBCE ist eingerichtet. Anmeldung in der Administration mit dem Benutzer „' +
+      D.User + '“ und dem gewählten Passwort.');
+    Log('WBCE ist eingerichtet. Anmeldung: ' + ADMIN_URL + '  (Benutzer: ' + D.User + ')');
+  end
   else
+  begin
+    steps.SetStep(3, wsError, 'fehlgeschlagen');
+    ShowBanner(bkError, 'Die Einrichtung ist fehlgeschlagen: ' + AErr + ' Alles wurde ' +
+      'zurückgesetzt; der Installer im Browser kann benutzt werden.');
     Log('FEHLER bei der Einrichtung: ' + AErr);
+  end;
   UpdateSetupLabel;
 end;
 
@@ -493,24 +587,15 @@ begin
   begin
     if DoSetup(D, err) then
     begin
-      MessageDlg('WBCE Portable', 'WBCE ist eingerichtet.' + LineEnding + LineEnding +
-        'Anmeldung in der Administration mit dem Benutzer "' + D.User + '" und dem ' +
-        'gewählten Passwort.', mtInformation, [mbOK], 0);
       OpenURL(ADMIN_URL);
+      steps.SetStep(4, wsDone, 'Anmeldeseite geöffnet');
     end
-    else
-    begin
-      MessageDlg('WBCE Portable', 'Die automatische Einrichtung ist fehlgeschlagen:' + LineEnding +
-        LineEnding + err + LineEnding + LineEnding +
-        'Alles wurde zurückgesetzt; der Installer im Browser kann benutzt werden.',
-        mtError, [mbOK], 0);
-      if AFromStart then OpenURL(APP_URL);
-    end;
+    else if AFromStart then
+      OpenURL(APP_URL);
   end
   else if AFromStart then
     OpenURL(APP_URL);
 end;
-
 procedure TfrmMain.SetupClick(Sender: TObject);
 begin
   if (FState = ssRunning) and not WbceInstalled(FBase) then OfferSetup(False);
@@ -567,9 +652,13 @@ var
 begin
   if FState <> ssStopped then Exit;
   SetState(ssStarting);
+  HideBanner;
+  steps.ResetAll;
   try
+    steps.SetStep(0, wsActive);
     Log('Prüfe Dateien ...');
     CheckFiles;
+    steps.SetStep(0, wsDone, 'PHP: ' + FPhpDir);
     ForceDirectories(FBase + 'data');
     ForceDirectories(FBase + 'logs');
     ForceDirectories(FBase + 'tmp');
@@ -590,6 +679,7 @@ begin
 
     if not DirectoryExists(FBase + 'data\mysql') then
     begin
+      steps.SetStep(1, wsActive, 'Erstinitialisierung ...');
       Log('Initialisiere Datenbank (nur beim ersten Start, ca. 10-20 s) ...');
       rc := RunWait(FBase + 'mariadb\bin\mariadb-install-db.exe',
         ['--datadir=' + FBase + 'data']);
@@ -598,20 +688,24 @@ begin
              LineEnding + 'Ordner "data" leeren und erneut versuchen.');
     end;
 
+    steps.SetStep(1, wsActive, 'Port ' + IntToStr(DB_PORT));
     Log('Starte MariaDB (Port ' + IntToStr(DB_PORT) + ') ...');
     FDbPid := StartBg(FBase + 'mariadb\bin\mysqld.exe',
       ['--defaults-file=' + FBase + 'my.ini']);
     if not WaitForPort(DB_PORT, 60, FDbPid) then
       Fail('MariaDB ist nicht gestartet. Siehe data\*.err');
+    steps.SetStep(1, wsDone, 'Port ' + IntToStr(DB_PORT));
 
     RunWait(FBase + 'mariadb\bin\mariadb.exe',
       ['--protocol=tcp', '--port=' + IntToStr(DB_PORT), '-u', 'root', '-e',
        'CREATE DATABASE IF NOT EXISTS wbce CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;']);
 
+    steps.SetStep(2, wsActive, 'Port ' + IntToStr(HTTP_PORT));
     Log('Starte Apache (Port ' + IntToStr(HTTP_PORT) + ') ...');
     FApachePid := StartBg(FBase + 'Apache24\bin\httpd.exe', []);
     if not WaitForPort(HTTP_PORT, 30, FApachePid) then
       Fail('Apache ist nicht gestartet. Siehe logs\apache-error.log');
+    steps.SetStep(2, wsDone, 'Port ' + IntToStr(HTTP_PORT));
 
     SavePids;
     SetState(ssRunning);
@@ -619,15 +713,24 @@ begin
     if not FileExists(FBase + 'htdocs\wbce\config.php') then
       Log('Erster Start: WBCE-Installer, DB-Host 127.0.0.1:3311, DB wbce, ' +
           'Benutzer root, Passwort leer, System Windows.');
+    if WbceInstalled(FBase) then
+      steps.SetStep(3, wsDone, 'bereits eingerichtet')
+    else
+      steps.SetStep(3, wsWait, 'noch nicht eingerichtet');
     if not FSilent then
     begin
-      if WbceInstalled(FBase) then OpenURL(APP_URL)
+      if WbceInstalled(FBase) then
+      begin
+        OpenURL(APP_URL);
+        steps.SetStep(4, wsDone, 'Browser geöffnet');
+      end
       else OfferSetup(True);
     end;
   except
     on E: Exception do
     begin
       Log('FEHLER: ' + E.Message);
+      if steps.ActiveIndex >= 0 then steps.SetStep(steps.ActiveIndex, wsError, 'fehlgeschlagen');
       KillPid(FApachePid);
       if FDbPid <> 0 then
         RunWait(FBase + 'mariadb\bin\mariadb-admin.exe',
@@ -664,6 +767,8 @@ begin
   FApachePid := 0;
   FDbPid := 0;
   SysUtils.DeleteFile(FBase + 'tmp\launcher.pid');
+  steps.ResetAll;
+  HideBanner;
   SetState(ssStopped);
   Log('Gestoppt. Der Stick kann jetzt entfernt werden.');
 end;
@@ -735,10 +840,20 @@ begin
     Log('Bereit. Ordner: ' + FBase);
   end;
   RefreshPhpLabel;
-  if not FLogoOk then Log('Hinweis: Das WBCE-Logo konnte nicht geladen werden.');
 
   for i := 1 to ParamCount do
-    if (Pos('/phpswitch:', LowerCase(ParamStr(i))) = 1) or (Pos('/phpuse:', LowerCase(ParamStr(i))) = 1) then
+    if Pos('/preview', LowerCase(ParamStr(i))) = 1 then
+    begin
+      if Pos('/previewsetup:', LowerCase(ParamStr(i))) = 1 then
+        PreviewSetupDialog(Self, FBase, Copy(ParamStr(i), 15, 500))
+      else if Pos('/previewphp:', LowerCase(ParamStr(i))) = 1 then
+        PreviewPhpDialog(Self, FBase, Copy(ParamStr(i), 13, 500))
+      else
+        PreviewMode(SysUtils.GetEnvironmentVariable('WBCE_PREVIEW_MODE'), Copy(ParamStr(i), 10, 500));
+      Close;
+      Break;
+    end
+    else if (Pos('/phpswitch:', LowerCase(ParamStr(i))) = 1) or (Pos('/phpuse:', LowerCase(ParamStr(i))) = 1) then
     begin
       PhpCli(ParamStr(i));
       Close;

@@ -24,11 +24,8 @@ Microsoft's license terms for redistributable code
 **not** covered by the MIT license of this repository. The build script verifies the
 Microsoft signature and the minimum version before copying them.
 
-The launcher's program icon (`launcher/wbce_portable.ico`, taken from WBCE CMS `favicon.ico`)
-and the logo shown in its window (`launcher/wbce_logo.png`, taken from the WBCE CMS installer,
-`install/logo.png`) are part of WBCE CMS (GPL-2.0-or-later; the WBCE name and logo belong to the
-WBCE project). They are used provisionally and will be replaced by the official artwork once
-its use has been agreed with the WBCE project.
+The launcher's program icon (launcher/wbce_portable.ico, taken from WBCE CMS avicon.ico), which\nis also drawn in the header of its windows, is part of WBCE CMS (GPL-2.0-or-later; the WBCE name and\nlogo belong to the WBCE project). It is used provisionally and will be replaced by the official artwork\nonce its use has been agreed with the WBCE project.
+
 ## Source code offer (GPL-2.0 components)
 
 MariaDB and WBCE CMS are distributed in binary and/or source form under the GPL-2.0.
