@@ -16,7 +16,7 @@ $Base = $PSScriptRoot
 if (-not $Base) { $Base = (Get-Location).Path }
 
 # --- Sicherheitschecks: nur sauberer Auslieferungszustand wird gepackt -----------
-if (Get-Process mysqld, mariadbd, httpd, WBCE-Portable -ErrorAction SilentlyContinue) {
+if (Get-Process mysqld, mariadbd, httpd, WBCE-Portable -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Base\*" }) {
     throw "Server oder Launcher laeuft noch - zuerst stoppen/beenden."
 }
 foreach ($d in "data", "logs", "tmp") {
