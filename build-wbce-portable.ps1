@@ -9,7 +9,7 @@
 #
 # Aufruf:  powershell -ExecutionPolicy Bypass -File .\build-wbce-portable.ps1
 #   -WbceVersion "1.6.11"   WBCE-Release von GitHub laden (Standard: 1.6.11)
-#   -PhpBranch "8.3"       mitgelieferte PHP-Version (Zweig 8.2 .. 8.5); die aktuelle Version
+#   -PhpBranch "8.4"       mitgelieferte PHP-Version (Zweig 8.2 .. 8.5); die aktuelle Version
 #                          samt Download-Adresse und SHA-256 liefert php.net (releases.json)
 #   -WbceZip "C:\x.zip"    stattdessen ein vorhandenes WBCE-Archiv verwenden
 #   -WbceVersion ""        ohne -WbceZip: WBCE nicht einpacken
@@ -27,7 +27,7 @@
 param(
     [string]$WbceZip = "",
     [string]$WbceVersion = "1.6.11",
-    [string]$PhpBranch = "8.3",
+    [string]$PhpBranch = "8.4",
     [switch]$Clean
 )
 
@@ -38,10 +38,10 @@ if (-not $Base) { $Base = (Get-Location).Path }
 # --- Download-Quellen (bei Bedarf Versionsnummern anpassen) -----------------
 $Downloads = @{
     # Apache Lounge liefert nur mit Referer + User-Agent die ZIP (sonst HTML-Fehlerseite)
-    Apache = "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip"
+    Apache = "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.70-261106-Win64-VS18.zip"
     # PHP: nicht fest verdrahtet, siehe Get-PhpRelease (releases.json von php.net)
     Maria  = "https://archive.mariadb.org/mariadb-11.4.13/winx64-packages/mariadb-11.4.13-winx64.zip"
-    Adminer = "https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1.php"
+    Adminer = "https://github.com/vrana/adminer/releases/download/v6.3.0/adminer-6.3.0.php"
     # Microsoft VC++ Runtime: wird nur entpackt (DLLs), nicht installiert oder mitgeliefert
     VcRedist = "https://aka.ms/vc14/vc_redist.x64.exe"
 }

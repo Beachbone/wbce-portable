@@ -7,11 +7,11 @@ build scripts and the launcher source code in this repository.
 
 | Component | Version | License | Source |
 |---|---|---|---|
-| Apache HTTP Server (Apache Lounge Windows build) | 2.4.69 | Apache License 2.0 | https://httpd.apache.org/ · binaries: https://www.apachelounge.com/ |
-| PHP (Windows build, thread safe) | 8.3.36 | PHP License 3.01 | https://www.php.net/ · https://github.com/php/php-src |
+| Apache HTTP Server (Apache Lounge Windows build) | 2.4.70 | Apache License 2.0 | https://httpd.apache.org/ · binaries: https://www.apachelounge.com/ |
+| PHP (Windows build, thread safe) | 8.4.27 | PHP License 3.01 | https://www.php.net/ · https://github.com/php/php-src |
 | MariaDB Server | 11.4.13 | GPL-2.0 (see `LICENSE-MariaDB.txt`) | https://archive.mariadb.org/mariadb-11.4.13/source/ · https://github.com/MariaDB/server |
 | WBCE CMS | 1.6.11 | GPL-2.0-or-later (see `LICENSE-WBCE.txt`) | https://github.com/WBCE/WBCE_CMS (tag `1.6.11`) |
-| Adminer | 4.8.1 | Apache License 2.0 or GPL-2.0 | https://github.com/vrana/adminer |
+| Adminer | 6.3.0 | Apache License 2.0 or GPL-2.0 | https://github.com/vrana/adminer |
 | WBCE-Portable.exe launcher | this repo | MIT | `launcher/` in this repo; built with Free Pascal 3.2.2 / Lazarus (LCL and RTL: LGPL with static-linking exception) |
 
 The release ZIP also contains the unmodified, Microsoft-signed Visual C++ runtime
