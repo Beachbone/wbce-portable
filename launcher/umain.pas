@@ -19,7 +19,7 @@ uses
   Process, Sockets, LCLIntf, Windows, uphp, usetup, uwbce;
 
 const
-  APP_VERSION = '0.5.0';
+  APP_VERSION = '0.5.1';
   HTTP_PORT = 4443;
   DB_PORT   = 3311;
   APP_URL   = 'http://localhost:4443/wbce';

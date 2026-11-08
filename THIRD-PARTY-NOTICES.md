@@ -10,7 +10,7 @@ build scripts and the launcher source code in this repository.
 | Apache HTTP Server (Apache Lounge Windows build) | 2.4.69 | Apache License 2.0 | https://httpd.apache.org/ · binaries: https://www.apachelounge.com/ |
 | PHP (Windows build, thread safe) | 8.3.36 | PHP License 3.01 | https://www.php.net/ · https://github.com/php/php-src |
 | MariaDB Server | 11.4.13 | GPL-2.0 (see `LICENSE-MariaDB.txt`) | https://archive.mariadb.org/mariadb-11.4.13/source/ · https://github.com/MariaDB/server |
-| WBCE CMS | 1.6.9 | GPL-2.0-or-later (see `LICENSE-WBCE.txt`) | https://github.com/WBCE/WBCE_CMS (tag `1.6.9`) |
+| WBCE CMS | 1.6.11 | GPL-2.0-or-later (see `LICENSE-WBCE.txt`) | https://github.com/WBCE/WBCE_CMS (tag `1.6.11`) |
 | Adminer | 4.8.1 | Apache License 2.0 or GPL-2.0 | https://github.com/vrana/adminer |
 | WBCE-Portable.exe launcher | this repo | MIT | `launcher/` in this repo; built with Free Pascal 3.2.2 / Lazarus (LCL and RTL: LGPL with static-linking exception) |
 
@@ -24,7 +24,7 @@ Microsoft's license terms for redistributable code
 **not** covered by the MIT license of this repository. The build script verifies the
 Microsoft signature and the minimum version before copying them.
 
-The launcher's program icon (launcher/wbce_portable.ico, taken from WBCE CMS avicon.ico), which\nis also drawn in the header of its windows, is part of WBCE CMS (GPL-2.0-or-later; the WBCE name and\nlogo belong to the WBCE project). It is used provisionally and will be replaced by the official artwork\nonce its use has been agreed with the WBCE project.
+The launcher's program icon (launcher/wbce_portable.ico, taken from WBCE CMS avicon.ico), which is also drawn in the header of its windows, is part of WBCE CMS (GPL-2.0-or-later; the WBCE name and logo belong to the WBCE project) and is used with the project's agreement.
 
 ## Source code offer (GPL-2.0 components)
 

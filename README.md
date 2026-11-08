@@ -18,7 +18,7 @@ Beim ersten Start folgt der WBCE-Installer (Werte siehe unten). Zum Beenden **Se
 
 Voraussetzung: Windows 10/11 (64 Bit). Die ZIP ist ca. 110 MB groß (mit `SHA256SUMS.txt`).
 
-Enthalten (Release 0.3.0): WBCE CMS 1.6.9 · Apache 2.4.69 · PHP 8.3.36 · MariaDB 11.4.13 · Adminer 4.8.1 · Microsoft VC++ Runtime-DLLs 14.51
+Enthalten (Release 0.5.1): WBCE CMS 1.6.11 · Apache 2.4.69 · PHP 8.3.36 · MariaDB 11.4.13 · Adminer 4.8.1 · Microsoft VC++ Runtime-DLLs 14.51
 
 ## Benutzung im Detail
 
@@ -51,10 +51,10 @@ Voraussetzungen: Windows, PowerShell 5.1, Internet (Downloads), [Lazarus](https:
 lazbuild launcher\wbce_portable.lpi        # erzeugt launcher\WBCE-Portable.exe
 
 # 2. Bundle bauen (lädt Apache, PHP, MariaDB, Adminer, WBCE; ~400 MB)
-powershell -ExecutionPolicy Bypass -File .\build-wbce-portable.ps1 [-WbceVersion 1.6.9 | -WbceZip C:\pfad\wbce.zip] [-PhpBranch 8.3]
+powershell -ExecutionPolicy Bypass -File .\build-wbce-portable.ps1 [-WbceVersion 1.6.11 | -WbceZip C:\pfad\wbce.zip] [-PhpBranch 8.3]
 
 # 3. Release-ZIP packen (nur im sauberen Zustand: data\, logs\, tmp\ leer, keine config.php)
-powershell -ExecutionPolicy Bypass -File .\make-zip.ps1 -Version 0.2.0_WBCE-1.6.9
+powershell -ExecutionPolicy Bypass -File .\make-zip.ps1 -Version 0.5.1_WBCE-1.6.11
 ```
 
 **Update auf neue Komponenten:** Versionen/URLs von Apache, MariaDB und Adminer im Block `$Downloads` am Anfang von `build-wbce-portable.ps1` anpassen (WBCE per `-WbceVersion`, PHP per `-PhpBranch`: Version, Datei und SHA-256 kommen automatisch aus `releases.json` von php.net), dann `build-wbce-portable.ps1 -Clean` ausführen (leert Download-Cache sowie `Apache24`, `php`, `mariadb`; `data`, `htdocs\wbce`, `logs` und `tmp` bleiben unberührt), das Bundle sauber machen (`data\`, `logs\`, `tmp\` leer, keine `config.php`) und mit `make-zip.ps1 -Version <neue Version>` packen. Die Microsoft-Runtime-DLLs werden dabei automatisch in der aktuellen Version von Microsoft geholt.

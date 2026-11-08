@@ -8,7 +8,7 @@
 # Die Microsoft-VC++-Runtime-DLLs werden aus der aktuellen vc_redist.x64.exe entpackt.
 #
 # Aufruf:  powershell -ExecutionPolicy Bypass -File .\build-wbce-portable.ps1
-#   -WbceVersion "1.6.9"   WBCE-Release von GitHub laden (Standard: 1.6.9)
+#   -WbceVersion "1.6.11"   WBCE-Release von GitHub laden (Standard: 1.6.11)
 #   -PhpBranch "8.3"       mitgelieferte PHP-Version (Zweig 8.2 .. 8.5); die aktuelle Version
 #                          samt Download-Adresse und SHA-256 liefert php.net (releases.json)
 #   -WbceZip "C:\x.zip"    stattdessen ein vorhandenes WBCE-Archiv verwenden
@@ -26,7 +26,7 @@
 
 param(
     [string]$WbceZip = "",
-    [string]$WbceVersion = "1.6.9",
+    [string]$WbceVersion = "1.6.11",
     [string]$PhpBranch = "8.3",
     [switch]$Clean
 )
