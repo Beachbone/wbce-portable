@@ -33,3 +33,6 @@ php-active.txt
 /php-*/
 /launcher/php-*/
 /*.exe
+
+# Einstellungen des Launchers (Nutzerdaten)
+/portable.ini

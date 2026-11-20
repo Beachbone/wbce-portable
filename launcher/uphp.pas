@@ -436,6 +436,7 @@ type
     procedure UpdateButtons;
     procedure ListClick(Sender: TObject);
     procedure ApplyClick(Sender: TObject);
+    procedure OfferRemoveOld(const AOldDir, AOldVer, ANewDir: string);
     procedure CloseClick(Sender: TObject);
     procedure CloseQueryEvent(Sender: TObject; var CanClose: Boolean);
   public
@@ -528,14 +529,55 @@ begin
   FillList;
 end;
 
+{ Versionsnummer ohne Build-Zusatz: 8.5.12-1 -> 8.5.12 }
+function BaseVersion(const V: string): string;
+var
+  j: Integer;
+begin
+  Result := V;
+  j := Pos('-', Result);
+  if j > 0 then Result := Copy(Result, 1, j - 1);
+end;
+
+{ Zweig: 8.4.27 -> 8.4 }
+function BranchOf(const V: string): string;
+var
+  p: Integer;
+begin
+  Result := '';
+  p := Pos('.', V);
+  if p = 0 then Exit;
+  p := Pos('.', V, p + 1);
+  if p = 0 then Result := V else Result := Copy(V, 1, p - 1);
+end;
+
+{ True, wenn A eine neuere Version als B ist (nur Ziffernteile, z. B. 8.4.28 > 8.4.27) }
+function VersionNewer(const A, B: string): Boolean;
+var
+  pa, pb: TStringArray;
+  i, na, nb: Integer;
+begin
+  Result := False;
+  pa := BaseVersion(A).Split('.');
+  pb := BaseVersion(B).Split('.');
+  for i := 0 to 2 do
+  begin
+    if i <= High(pa) then na := StrToIntDef(pa[i], -1) else na := 0;
+    if i <= High(pb) then nb := StrToIntDef(pb[i], -1) else nb := 0;
+    if (na < 0) or (nb < 0) then Exit(False);
+    if na <> nb then Exit(na > nb);
+  end;
+end;
+
 procedure TPhpForm.FillList;
 var
   sr: TSearchRec;
   dirs: TStringList;
-  i, j: Integer;
+  i, j, upd: Integer;
   actDir, ver, baseVer, line: string;
   vers: TStringList;
   known: Boolean;
+  isTarget: array of Boolean;
 begin
   lst.Items.Clear;
   FKind.Clear;
@@ -554,22 +596,38 @@ begin
     end;
     dirs.Sort;
 
+    SetLength(isTarget, Length(FOffers));
+    for i := 0 to High(isTarget) do isTarget[i] := False;
+    for i := 0 to dirs.Count - 1 do
+      vers.Add(PhpVersionOf(FBase, dirs[i]));
+
     for i := 0 to dirs.Count - 1 do
     begin
-      ver := PhpVersionOf(FBase, dirs[i]);
-      vers.Add(ver);
+      ver := vers[i];
+      // gibt es fuer diesen Zweig eine neuere Version, die noch nicht installiert ist?
+      upd := -1;
+      for j := 0 to High(FOffers) do
+        if (FOffers[j].Branch = BranchOf(ver)) and VersionNewer(FOffers[j].Version, ver) and
+           (vers.IndexOf(BaseVersion(FOffers[j].Version)) < 0) then
+          upd := j;
       line := 'PHP ' + ver + '   (installiert';
       if dirs[i] = actDir then line := line + ', aktiv';
       line := line + ')';
+      if upd >= 0 then
+      begin
+        line := line + '   →  Update ' + FOffers[upd].Version;
+        isTarget[upd] := True;
+        FKind.Add('U:' + dirs[i] + '|' + IntToStr(upd));
+      end
+      else
+        FKind.Add('I:' + dirs[i]);
       lst.Items.Add(line);
-      FKind.Add('I:' + dirs[i]);
     end;
 
     for i := 0 to High(FOffers) do
     begin
-      baseVer := FOffers[i].Version;
-      j := Pos('-', baseVer);
-      if j > 0 then baseVer := Copy(baseVer, 1, j - 1);
+      if isTarget[i] then Continue;   // steht schon als Update bei der installierten Version
+      baseVer := BaseVersion(FOffers[i].Version);
       known := vers.IndexOf(baseVer) >= 0;
       if known then Continue;
       lst.Items.Add('PHP ' + FOffers[i].Version + '   (Download, ' +
@@ -583,27 +641,49 @@ begin
 
   // aktive Version vorwaehlen
   for i := 0 to FKind.Count - 1 do
-    if FKind[i] = 'I:' + actDir then lst.ItemIndex := i;
+    if (FKind[i] = 'I:' + actDir) or (Pos('U:' + actDir + '|', FKind[i]) = 1) then
+      lst.ItemIndex := i;
 
   if FOnlineErr <> '' then
     lblHint.Caption := FOnlineErr + ' Es werden nur die installierten Versionen angezeigt.'
   else if FRunning then
-    lblHint.Caption := 'Der Server läuft - zum Wechseln zuerst den Server stoppen.'
+    lblHint.Caption := 'Der Server läuft - zum Wechseln oder Aktualisieren zuerst den Server stoppen.'
+  else if (lst.ItemIndex >= 0) and (Copy(FKind[lst.ItemIndex], 1, 2) = 'U:') then
+    lblHint.Caption := 'Für die aktive Version gibt es ein Update. „Aktualisieren“ lädt die ' +
+                       'neue Version; die alte kann danach gelöscht werden. Die Daten bleiben unverändert.'
   else
     lblHint.Caption := 'Die gewählte Version wird beim nächsten Serverstart verwendet. ' +
                        'Die Daten bleiben unverändert.';
   UpdateButtons;
 end;
 
+{ 'U:<ordner>|<angebot>' zerlegen }
+procedure SplitUpdateKind(const K: string; out ADir: string; out AOffer: Integer);
+var
+  p: Integer;
+begin
+  p := Pos('|', K);
+  ADir := Copy(K, 3, p - 3);
+  AOffer := StrToIntDef(Copy(K, p + 1, 10), -1);
+end;
+
 procedure TPhpForm.UpdateButtons;
 var
-  k, actDir: string;
+  k, actDir, d: string;
+  o: Integer;
 begin
   actDir := PhpActiveDir(FBase);
   btnApply.Enabled := False;
   btnApply.Caption := 'Aktivieren';
   if (lst.ItemIndex < 0) or FBusy then Exit;
   k := FKind[lst.ItemIndex];
+  if Copy(k, 1, 2) = 'U:' then
+  begin
+    SplitUpdateKind(k, d, o);
+    btnApply.Caption := 'Auf PHP ' + FOffers[o].Version + ' aktualisieren';
+    btnApply.Enabled := not FRunning;
+    Exit;
+  end;
   if Copy(k, 1, 2) = 'O:' then
     btnApply.Caption := 'Herunterladen und aktivieren'
   else
@@ -616,9 +696,38 @@ begin
   UpdateButtons;
 end;
 
+{ Nach einem Update: die alte Version auf Wunsch loeschen (nie die aktive) }
+procedure TPhpForm.OfferRemoveOld(const AOldDir, AOldVer, ANewDir: string);
+begin
+  if (AOldDir = '') or SameText(AOldDir, ANewDir) or
+     SameText(AOldDir, PhpActiveDir(FBase)) or
+     (Pos('php', LowerCase(AOldDir)) <> 1) or (Pos('\', AOldDir) > 0) or
+     (Pos('/', AOldDir) > 0) or (Pos('..', AOldDir) > 0) or
+     not PhpDirValid(FBase, AOldDir) then Exit;
+  if MessageDlg('PHP-Version', 'PHP ' + AOldVer + ' ist jetzt nicht mehr aktiv.' + LineEnding +
+       'Den Ordner „' + AOldDir + '“ löschen, um Platz zu sparen (ca. 30 MB)?',
+       mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+  begin
+    if Assigned(FLog) then FLog('Alte PHP-Version bleibt erhalten: ' + AOldDir);
+    Exit;
+  end;
+  if DeleteDirectory(FBase + AOldDir, False) and
+     (not DirectoryExists(FBase + AOldDir) or RemoveDir(FBase + AOldDir)) then
+  begin
+    if Assigned(FLog) then FLog('Alte PHP-Version gelöscht: ' + AOldDir);
+  end
+  else
+  begin
+    if Assigned(FLog) then FLog('WARNUNG: ' + AOldDir + ' konnte nicht vollständig gelöscht werden.');
+    MessageDlg('PHP-Version', 'Der Ordner „' + AOldDir + '“ konnte nicht vollständig ' +
+      'gelöscht werden. Er kann später von Hand entfernt werden.', mtWarning, [mbOK], 0);
+  end;
+end;
+
 procedure TPhpForm.ApplyClick(Sender: TObject);
 var
-  k, pname, err: string;
+  k, pname, err, oldDir, oldVer: string;
+  o: Integer;
 begin
   if lst.ItemIndex < 0 then Exit;
   k := FKind[lst.ItemIndex];
@@ -627,8 +736,31 @@ begin
   btnApply.Enabled := False;
   btnClose.Enabled := False;
   Screen.Cursor := crHourGlass;
+  oldDir := '';
   try
-    if Copy(k, 1, 2) = 'O:' then
+    if Copy(k, 1, 2) = 'U:' then
+    begin
+      SplitUpdateKind(k, oldDir, o);
+      oldVer := PhpVersionOf(FBase, oldDir);
+      lblHint.Caption := 'Lade und installiere PHP ' + FOffers[o].Version +
+                         ' - bitte warten (ca. 35 MB) ...';
+      Application.ProcessMessages;
+      pname := PhpInstall(FBase, FOffers[o], FLog, err);
+      if pname = '' then
+      begin
+        MessageDlg('PHP-Version', err, mtError, [mbOK], 0);
+        Exit;
+      end;
+      // nur wenn die aktualisierte Version die aktive war, wird die neue aktiv
+      if not SameText(oldDir, PhpActiveDir(FBase)) then
+      begin
+        if Assigned(FLog) then FLog('PHP ' + FOffers[o].Version + ' installiert: ' + pname);
+        FChanged := True;
+        OfferRemoveOld(oldDir, oldVer, pname);
+        Exit;
+      end;
+    end
+    else if Copy(k, 1, 2) = 'O:' then
     begin
       lblHint.Caption := 'Lade und installiere PHP - bitte warten (ca. 35 MB) ...';
       Application.ProcessMessages;
@@ -644,6 +776,7 @@ begin
     PhpSetActive(FBase, pname);
     if Assigned(FLog) then FLog('PHP-Version gewechselt: ' + pname);
     FChanged := True;
+    if oldDir <> '' then OfferRemoveOld(oldDir, oldVer, pname);
   finally
     Screen.Cursor := crDefault;
     FBusy := False;

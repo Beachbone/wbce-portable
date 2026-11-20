@@ -18,29 +18,40 @@ Beim ersten Start folgt der WBCE-Installer (Werte siehe unten). Zum Beenden **Se
 
 Voraussetzung: Windows 10/11 (64 Bit). Die ZIP ist ca. 110 MB groß (mit `SHA256SUMS.txt`).
 
-Enthalten (Release 0.5.1): WBCE CMS 1.6.11 · Apache 2.4.70 · PHP 8.4.27 · MariaDB 11.4.13 · Adminer 6.3.0 · Microsoft VC++ Runtime-DLLs 14.51
+Enthalten (Release 0.6.0): WBCE CMS 1.6.11 · Apache 2.4.71 · PHP 8.4.28 · MariaDB 11.4.14 · Adminer 6.3.1 · Microsoft VC++ Runtime-DLLs 14.51
 
 ## Benutzung im Detail
 
 1. ZIP auf den Stick oder in einen Ordner entpacken (Pfad ohne Umlaute/Sonderzeichen).
-2. `WBCE-Portable.exe` starten und **Server starten** klicken. Der Browser öffnet `http://localhost:4443/wbce`.
+2. `WBCE-Portable.exe` starten und **Server starten** klicken. Der Browser öffnet `http://localhost:4443/wbce` (einstellbar, siehe *Einstellungen*).
 3. Beim ersten Start fragt der Launcher nach den Zugangsdaten des Administrators und richtet WBCE automatisch ein (Passwort: mindestens 12 Zeichen; erlaubt sind Buchstaben, Ziffern und `_ - ! # * + @ $ & :`; der Knopf „Zufallspasswort erzeugen“ hilft). Der Datenbank-Benutzer samt Zufallspasswort steht danach in `htdocs\wbce\config.php`; für Adminer funktioniert weiterhin `root` ohne Passwort. Der Link „WBCE automatisch einrichten …“ unten links im Fenster ruft den Dialog später noch einmal auf, solange WBCE nicht eingerichtet ist. Alternativ lässt sich der **normale WBCE-Installer im Browser** verwenden (Werte siehe Tabelle):
 
    | Feld | Wert |
    |---|---|
    | Betriebssystem | Windows |
-   | Datenbank-Host | `127.0.0.1:3311` (Port mitangeben!) |
+   | Datenbank-Host | `127.0.0.1:3311` (Port mitangeben! 3311 ist der Standard, siehe *Einstellungen*) |
    | Datenbankname | `wbce` |
    | Benutzer / Passwort | `root` / *leer* |
 
    Administrator-Zugang frei wählen.
 4. Zum Beenden **Server stoppen** klicken. **Erst danach den Stick abziehen** – sonst können Datenbankdaten beschädigt werden. Beim Schließen des Fensters bei laufendem Server wird automatisch nachgefragt.
 
-Der Server lauscht nur auf `127.0.0.1` (Port 4443 Web, 3311 Datenbank) und ist aus dem Netzwerk nicht erreichbar. Ein echter Autostart beim Einstecken ist unter Windows nicht möglich (`autorun.inf` wird für USB-Sticks ignoriert). `start.bat`/`stop.bat` liegen als Notbehelf bei.
+Der Server lauscht nur auf `127.0.0.1` (Standard: Port 4443 Web, 3311 Datenbank) und ist aus dem Netzwerk nicht erreichbar. Ein echter Autostart beim Einstecken ist unter Windows nicht möglich (`autorun.inf` wird für USB-Sticks ignoriert). `start.bat`/`stop.bat` liegen als Notbehelf bei.
+
+## Einstellungen: Ports und Browser
+
+Unten rechts im Launcher öffnet **Einstellungen** einen kleinen Dialog:
+
+- **Ports** für Webserver (Standard 4443) und Datenbank (Standard 3311), änderbar bei gestopptem Server. Damit laufen **mehrere WBCE Portables gleichzeitig**: Jede Kopie bekommt ihr eigenes Port-Paar, und *Freie Ports suchen* schlägt das nächste freie Paar vor (4444/3312, 4445/3313, …). Ist WBCE schon eingerichtet, passt der Launcher `DB_PORT` und den Port in `WB_URL` in `htdocs\wbce\config.php` automatisch an. Feste Adressen mit dem alten Port in Seiteninhalten schreibt er nicht um.
+- **Beim Serverstart im Browser öffnen:** Website (Frontend), Administration (Backend) oder nichts.
+
+Gespeichert wird in `portable.ini` im Programmordner. Die Datei entsteht beim ersten Start und kann auch von Hand bearbeitet werden; `start.bat`/`stop.bat` lesen sie ebenfalls. `stop.bat` beendet nur den Apache aus dem eigenen Ordner.
 
 ## PHP-Version wechseln
 
-Im Launcher steht unten rechts die aktive PHP-Version (z. B. „PHP 8.4.27“). Ein Klick darauf öffnet eine kleine Liste mit den installierten und den bei [php.net](https://windows.php.net/download/) verfügbaren Versionen (8.2 bis 8.5, thread safe, x64; ältere sind nicht mehr unterstützt). **Herunterladen und aktivieren** lädt die gewählte Version von `downloads.php.net`, prüft die SHA-256-Prüfsumme aus dem offiziellen Manifest `releases.json`, entpackt sie in einen eigenen Ordner (`php-8.5.12-1\`) und merkt sie sich in `php-active.txt`. Gewechselt wird nur bei **gestopptem Server**; Seiten und Datenbank bleiben unverändert, und die bisherige Version bleibt zum Zurückwechseln erhalten. Nur beim Öffnen dieser Liste baut das Programm eine Internetverbindung auf. `start.bat` beachtet die Auswahl ebenfalls. Zum Aufräumen einen nicht mehr benötigten Ordner `php-…` einfach löschen (nicht die aktive Version).
+Im Launcher steht unten rechts die aktive PHP-Version (z. B. „PHP 8.4.28“). Ein Klick darauf öffnet eine kleine Liste mit den installierten und den bei [php.net](https://windows.php.net/download/) verfügbaren Versionen (8.2 bis 8.5, thread safe, x64; ältere sind nicht mehr unterstützt). **Herunterladen und aktivieren** lädt die gewählte Version von `downloads.php.net`, prüft die SHA-256-Prüfsumme aus dem offiziellen Manifest `releases.json`, entpackt sie in einen eigenen Ordner (`php-8.5.12-1\`) und merkt sie sich in `php-active.txt`. Gewechselt wird nur bei **gestopptem Server**; Seiten und Datenbank bleiben unverändert, und die bisherige Version bleibt zum Zurückwechseln erhalten. Nur beim Öffnen dieser Liste baut das Programm eine Internetverbindung auf. `start.bat` beachtet die Auswahl ebenfalls. Zum Aufräumen einen nicht mehr benötigten Ordner `php-…` einfach löschen (nicht die aktive Version).
+
+**PHP aktualisieren:** Gibt es für eine installierte Version eine neuere im selben Zweig (z. B. 8.4.28 statt 8.4.27), steht das direkt in deren Zeile („→ Update 8.4.28“), und der Knopf heißt **Auf PHP 8.4.28 aktualisieren**. Danach ist die neue Version aktiv, und der Launcher fragt, ob der Ordner der alten Version gelöscht werden soll (etwa 30 MB). Die aktive Version wird nie gelöscht.
 
 ## Selbst bauen
 
@@ -54,7 +65,7 @@ lazbuild launcher\wbce_portable.lpi        # erzeugt launcher\WBCE-Portable.exe
 powershell -ExecutionPolicy Bypass -File .\build-wbce-portable.ps1 [-WbceVersion 1.6.11 | -WbceZip C:\pfad\wbce.zip] [-PhpBranch 8.4]
 
 # 3. Release-ZIP packen (nur im sauberen Zustand: data\, logs\, tmp\ leer, keine config.php)
-powershell -ExecutionPolicy Bypass -File .\make-zip.ps1 -Version 0.5.1_WBCE-1.6.11
+powershell -ExecutionPolicy Bypass -File .\make-zip.ps1 -Version 0.6.0_WBCE-1.6.11
 ```
 
 **Update auf neue Komponenten:** Versionen/URLs von Apache, MariaDB und Adminer im Block `$Downloads` am Anfang von `build-wbce-portable.ps1` anpassen (WBCE per `-WbceVersion`, PHP per `-PhpBranch`: Version, Datei und SHA-256 kommen automatisch aus `releases.json` von php.net), dann `build-wbce-portable.ps1 -Clean` ausführen (leert Download-Cache sowie `Apache24`, `php`, `mariadb`; `data`, `htdocs\wbce`, `logs` und `tmp` bleiben unberührt), das Bundle sauber machen (`data\`, `logs\`, `tmp\` leer, keine `config.php`) und mit `make-zip.ps1 -Version <neue Version>` packen. Die Microsoft-Runtime-DLLs werden dabei automatisch in der aktuellen Version von Microsoft geholt.

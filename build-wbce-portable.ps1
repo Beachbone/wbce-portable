@@ -2,7 +2,7 @@
 # WBCE Portable Builder
 # Baut ein komplett portables WBCE-CMS-Bundle (Apache + PHP + MariaDB) in den
 # Ordner, in dem dieses Skript liegt. Danach: start.bat doppelklicken,
-# Browser oeffnet http://localhost:4443
+# Browser oeffnet http://localhost:4443 (Ports einstellbar ueber portable.ini / Launcher)
 #
 # Voraussetzung: Windows 10/11 x64, PowerShell 5 (immer vorhanden), Internet.
 # Die Microsoft-VC++-Runtime-DLLs werden aus der aktuellen vc_redist.x64.exe entpackt.
@@ -38,10 +38,10 @@ if (-not $Base) { $Base = (Get-Location).Path }
 # --- Download-Quellen (bei Bedarf Versionsnummern anpassen) -----------------
 $Downloads = @{
     # Apache Lounge liefert nur mit Referer + User-Agent die ZIP (sonst HTML-Fehlerseite)
-    Apache = "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.70-261106-Win64-VS18.zip"
+    Apache = "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.71-261112-Win64-VS18.zip"
     # PHP: nicht fest verdrahtet, siehe Get-PhpRelease (releases.json von php.net)
-    Maria  = "https://archive.mariadb.org/mariadb-11.4.13/winx64-packages/mariadb-11.4.13-winx64.zip"
-    Adminer = "https://github.com/vrana/adminer/releases/download/v6.3.0/adminer-6.3.0.php"
+    Maria  = "https://archive.mariadb.org/mariadb-11.4.14/winx64-packages/mariadb-11.4.14-winx64.zip"
+    Adminer = "https://github.com/vrana/adminer/releases/download/v6.3.1/adminer-6.3.1.php"
     # Microsoft VC++ Runtime: wird nur entpackt (DLLs), nicht installiert oder mitgeliefert
     VcRedist = "https://aka.ms/vc14/vc_redist.x64.exe"
 }
@@ -289,11 +289,12 @@ if ($WbceZip -and (Test-Path $WbceZip)) {
 Write-Host "4/6 Schreibe Konfiguration ..."
 
 # httpd.conf: __BASE__ (Programmordner) und __PHP__ (aktives PHP-Verzeichnis) werden von
-# Launcher bzw. start.bat bei jedem Start durch die echten Pfade ersetzt.
+# Launcher bzw. start.bat bei jedem Start durch die echten Pfade ersetzt, __HTTP_PORT__ /
+# __DB_PORT__ durch die Ports aus portable.ini (Standard 4443 / 3311).
 $httpd = @"
 ServerRoot "__BASE__Apache24"
-Listen 127.0.0.1:4443
-ServerName localhost:4443
+Listen 127.0.0.1:__HTTP_PORT__
+ServerName localhost:__HTTP_PORT__
 
 LoadModule authz_core_module      modules/mod_authz_core.so
 LoadModule authz_host_module      modules/mod_authz_host.so
@@ -358,7 +359,7 @@ error_log="__BASE__logs\php-error.log"
 # my.ini: ebenfalls __BASE__-Ersetzung
 $myini = @"
 [mysqld]
-port=3311
+port=__DB_PORT__
 bind-address=127.0.0.1
 basedir="__BASE__mariadb"
 datadir="__BASE__data"
@@ -385,10 +386,21 @@ if exist "%BASE%php-active.txt" set /p PHPDIR=<"%BASE%php-active.txt"
 rem PHP-Verzeichnis in den DLL-Suchpfad (curl/intl brauchen libssh2, ICU usw. neben php.exe)
 set "PATH=%BASE%%PHPDIR%;%PATH%"
 
+rem Ports und Browser-Ziel aus portable.ini (legt der Launcher an; sonst Standardwerte).
+rem Die Anpassung von htdocs\wbce\config.php an geaenderte Ports macht nur der Launcher.
+set HTTPPORT=4443
+set DBPORT=3311
+set OPENURL=site
+if exist "%BASE%portable.ini" for /f "usebackq eol=; tokens=1,2 delims== " %%a in ("%BASE%portable.ini") do (
+    if /i "%%a"=="http" set HTTPPORT=%%b
+    if /i "%%a"=="db" set DBPORT=%%b
+    if /i "%%a"=="open" set OPENURL=%%b
+)
+
 rem Konfigs mit echtem Pfad erzeugen (Laufwerksbuchstabe ist egal)
-powershell -NoProfile -Command "(Get-Content '%BASE%conf-httpd.template') -replace '__PHP__','%BASE:\=/%%PHPDIR%' -replace '__BASE__','%BASE:\=/%' | Set-Content '%BASE%Apache24\conf\httpd.conf'"
+powershell -NoProfile -Command "(Get-Content '%BASE%conf-httpd.template') -replace '__PHP__','%BASE:\=/%%PHPDIR%' -replace '__BASE__','%BASE:\=/%' -replace '__HTTP_PORT__','%HTTPPORT%' | Set-Content '%BASE%Apache24\conf\httpd.conf'"
 powershell -NoProfile -Command "(Get-Content '%BASE%conf-php.template') -replace '__PHP__','%BASE:\=/%%PHPDIR%' -replace '__BASE__','%BASE:\=/%' | Set-Content '%BASE%%PHPDIR%\php.ini'"
-powershell -NoProfile -Command "(Get-Content '%BASE%conf-my.template') -replace '__BASE__','%BASE:\=/%' | Set-Content '%BASE%my.ini'"
+powershell -NoProfile -Command "(Get-Content '%BASE%conf-my.template') -replace '__BASE__','%BASE:\=/%' -replace '__DB_PORT__','%DBPORT%' | Set-Content '%BASE%my.ini'"
 
 rem Datenbank beim ersten Start initialisieren
 if not exist "%BASE%data\mysql" (
@@ -401,19 +413,26 @@ powershell -NoProfile -Command "Start-Process -WindowStyle Hidden -FilePath 'mar
 
 rem Kurz warten, DB anlegen falls fehlt, dann Apache
 timeout /t 3 /nobreak >nul
-"%BASE%mariadb\bin\mariadb.exe" --port=3311 -u root -e "CREATE DATABASE IF NOT EXISTS wbce CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+"%BASE%mariadb\bin\mariadb.exe" --protocol=tcp --port=%DBPORT% -u root -e "CREATE DATABASE IF NOT EXISTS wbce CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 powershell -NoProfile -Command "Start-Process -WindowStyle Hidden -FilePath 'Apache24\bin\httpd.exe'"
 
-echo WBCE Portable laeuft: http://localhost:4443/wbce
-start http://localhost:4443/wbce
+echo WBCE Portable laeuft: http://localhost:%HTTPPORT%/wbce
+if /i "%OPENURL%"=="site" start http://localhost:%HTTPPORT%/wbce
+if /i "%OPENURL%"=="admin" start http://localhost:%HTTPPORT%/wbce/admin
 "@
 $startBat | Out-File -FilePath "$Base\start.bat" -Encoding ascii
 
+# stop.bat beendet nur das Apache aus DIESEM Ordner (andere Portables laufen weiter)
 $stopBat = @"
 @echo off
+setlocal
 set BASE=%~dp0
-"%BASE%mariadb\bin\mariadb-admin.exe" --port=3311 -u root shutdown
-taskkill /F /IM httpd.exe >nul 2>&1
+set DBPORT=3311
+if exist "%BASE%portable.ini" for /f "usebackq eol=; tokens=1,2 delims== " %%a in ("%BASE%portable.ini") do (
+    if /i "%%a"=="db" set DBPORT=%%b
+)
+"%BASE%mariadb\bin\mariadb-admin.exe" --protocol=tcp --port=%DBPORT% -u root shutdown
+powershell -NoProfile -Command "Get-Process httpd -ErrorAction SilentlyContinue | Where-Object { `$_.Path -and `$_.Path.StartsWith('%BASE%', [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force"
 echo Gestoppt. Stick erst jetzt entfernen!
 timeout /t 3
 "@
@@ -455,7 +474,8 @@ Benutzung
    htdocs\wbce\config.php, fuer Adminer geht auch root ohne Passwort).
    Alternativ "Installer im Browser benutzen" waehlen; dort gilt:
      System:          Windows
-     Datenbank-Host:  127.0.0.1:3311      (Port 3311 mit angeben!)
+     Datenbank-Host:  127.0.0.1:3311      (Port mit angeben! 3311 = Standard,
+                                           siehe "Einstellungen")
      Datenbankname:   wbce
      Benutzer:        root
      Passwort:        (leer lassen)
@@ -467,7 +487,22 @@ Benutzung
 
 PHP-Version wechseln: in der EXE unten rechts auf "PHP x.y.z" klicken (nur bei
 gestopptem Server). Weitere Versionen (8.2 bis 8.5) werden von php.net geladen
-und per SHA-256 geprueft; die Daten bleiben unveraendert.
+und per SHA-256 geprueft; die Daten bleiben unveraendert. Gibt es fuer die
+installierte Version ein Update im selben Zweig (z. B. 8.4.27 -> 8.4.28), steht
+es in der Liste und laesst sich mit "Aktualisieren" einspielen; die alte
+Version kann danach geloescht werden.
+
+Einstellungen: in der EXE unten rechts auf "Einstellungen" klicken.
+  - Ports fuer Webserver (Standard 4443) und Datenbank (Standard 3311). Nur bei
+    gestopptem Server aenderbar. Sollen mehrere WBCE Portables gleichzeitig laufen,
+    bekommt jede Kopie eigene Ports ("Freie Ports suchen" schlaegt ein freies Paar
+    vor). Die WBCE-Konfiguration (htdocs\wbce\config.php: DB_PORT, WB_URL) wird
+    dabei automatisch angepasst.
+  - Was beim Serverstart im Browser geoeffnet wird: Website, Administration
+    oder nichts.
+  Gespeichert wird in portable.ini im Programmordner (auch von start.bat gelesen).
+  Hinweis: Links, die als feste Adresse mit altem Port in Seiteninhalten stehen,
+  werden nicht umgeschrieben.
 
 Ohne die EXE (Notbehelf): start.bat / stop.bat. Apache und MariaDB laufen dann
 unsichtbar im Hintergrund (kein Konsolenfenster); beendet wird mit stop.bat.
@@ -481,8 +516,8 @@ sie laesst sich gar nicht starten)?
            Get-ChildItem -Recurse "C:\Pfad\zu\WBCE-Portable" | Unblock-File
   Bei der Meldung von SmartScreen: "Weitere Informationen" -> "Trotzdem ausfuehren".
 
-Adressen
---------
+Adressen (mit den Standardports)
+--------------------------------
   Website:        http://localhost:4443/wbce
   Administration: http://localhost:4443/wbce/admin
   Adminer (DB):   http://localhost:4443/adminer.php   (Server 127.0.0.1:3311, root)
@@ -502,7 +537,9 @@ Fehlersuche
 -----------
   "VCRUNTIME140.dll fehlt"  Ordner unvollstaendig entpackt (Apache24\bin\vcruntime140*.dll,
                             msvcp140.dll) - ZIP erneut entpacken.
-  "Port 4443/3311 belegt"   anderes Programm nutzt den Port (z. B. XAMPP) - beenden.
+  "Port 4443/3311 belegt"   anderes Programm (z. B. XAMPP oder ein weiteres WBCE
+                            Portable) nutzt den Port - beenden oder unter
+                            "Einstellungen" andere Ports waehlen.
   Apache startet nicht      logs\apache-error.log
   MariaDB startet nicht     data\*.err
   Pfad mit Sonderzeichen    Bundle in einen Pfad ohne Umlaute legen.

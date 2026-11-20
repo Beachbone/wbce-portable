@@ -5,6 +5,7 @@ unit umain;
 { WBCE Portable Launcher
   Startet/stoppt Apache + MariaDB aus dem Ordner, in dem die EXE liegt.
   Alles laeuft unsichtbar im Hintergrund; das Fenster zeigt nur den Status.
+  Ports und Browser-Ziel stehen in portable.ini (siehe uconfig.pas).
   Kommandozeile:  /start      Server direkt beim Programmstart starten
                   /selftest   Start, 3 s warten, Stopp, beenden (Log: logs\launcher-selftest.txt)
                   /phpswitch:8.5  neueste PHP-Version des Zweigs laden und aktivieren, beenden
@@ -16,14 +17,10 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, ExtCtrls,
-  Process, Sockets, LCLIntf, Windows, uphp, usetup, uwbce;
+  Process, Sockets, LCLIntf, Windows, uphp, usetup, uwbce, uconfig;
 
 const
-  APP_VERSION = '0.5.1';
-  HTTP_PORT = 4443;
-  DB_PORT   = 3311;
-  APP_URL   = 'http://localhost:4443/wbce';
-  ADMIN_URL = 'http://localhost:4443/wbce/admin';
+  APP_VERSION = '0.6.0';
 
 type
   TServerState = (ssStopped, ssStarting, ssRunning, ssStopping);
@@ -42,6 +39,7 @@ type
     FPhpDir: string;      // aktives PHP-Verzeichnis (php oder php-8.x.y), ohne Backslash
     lblPhp: TLabel;
     lblSetup: TLabel;
+    lblSettings: TLabel;
     header: TWbceHeader;
     status: TWbceStatus;
     steps: TWbceSteps;
@@ -75,6 +73,8 @@ type
     procedure PhpClick(Sender: TObject);
     procedure PhpCli(const AArg: string);
     procedure WriteConfig(const ATemplate, ADest: string);
+    procedure SyncConfigLogged;
+    procedure SettingsClick(Sender: TObject);
     procedure SavePids;
     procedure LoadPids;
     procedure KillPid(APid: DWORD);
@@ -120,6 +120,7 @@ begin
 
   FBase := ExtractFilePath(ParamStr(0));
   FBaseFwd := StringReplace(FBase, '\', '/', [rfReplaceAll]);
+  LoadConfig(FBase);
   FState := ssStopped;
   FSilent := False;
   for i := 1 to ParamCount do
@@ -212,7 +213,7 @@ begin
   lblSetup := TLabel.Create(Self);
   lblSetup.Parent := Self;
   lblSetup.AutoSize := False;
-  lblSetup.SetBounds(18, 628, 260, 18);
+  lblSetup.SetBounds(18, 628, 220, 18);
   lblSetup.Caption := 'WBCE automatisch einrichten ...';
   lblSetup.Hint := 'Administrator-Zugang anlegen und WBCE ohne Browser-Installer einrichten';
   lblSetup.ShowHint := True;
@@ -223,12 +224,23 @@ begin
   lblPhp := TLabel.Create(Self);
   lblPhp.Parent := Self;
   lblPhp.AutoSize := False;
-  lblPhp.SetBounds(302, 628, 200, 18);
+  lblPhp.SetBounds(246, 628, 150, 18);
   lblPhp.Alignment := taRightJustify;
   lblPhp.Hint := 'PHP-Version anzeigen oder wechseln';
   lblPhp.ShowHint := True;
   lblPhp.OnClick := @PhpClick;
   WbceStyleLink(lblPhp);
+
+  lblSettings := TLabel.Create(Self);
+  lblSettings.Parent := Self;
+  lblSettings.AutoSize := False;
+  lblSettings.SetBounds(412, 628, 90, 18);
+  lblSettings.Alignment := taRightJustify;
+  lblSettings.Caption := 'Einstellungen';
+  lblSettings.Hint := 'Ports und Browser-Verhalten beim Start';
+  lblSettings.ShowHint := True;
+  lblSettings.OnClick := @SettingsClick;
+  WbceStyleLink(lblSettings);
 
   tmr := TTimer.Create(Self);
   tmr.Interval := 2000;
@@ -283,7 +295,7 @@ begin
       status.SetStatus(clWbOrange, 'Server startet ...', 'Datenbank und Webserver werden gestartet.');
     ssRunning:
       status.SetStatus(clWbGreen, 'Server läuft',
-        APP_URL + '   ·   Vor dem Abziehen des Sticks stoppen!');
+        SiteUrl + '   ·   Vor dem Abziehen des Sticks stoppen!');
     ssStopping:
       status.SetStatus(clWbOrange, 'Server wird gestoppt ...', 'MariaDB wird sauber heruntergefahren.');
   end;
@@ -292,6 +304,7 @@ begin
   btnSite.Enabled := AState = ssRunning;
   btnAdmin.Enabled := AState = ssRunning;
   lblPhp.Enabled := AState in [ssStopped, ssRunning];
+  lblSettings.Enabled := AState in [ssStopped, ssRunning];
   UpdateSetupLabel;
   Application.ProcessMessages;
 end;
@@ -315,6 +328,7 @@ begin
   memLog.Height := ClientHeight - 38 - y;
   lblSetup.Top := ClientHeight - 28;
   lblPhp.Top := ClientHeight - 28;
+  lblSettings.Top := ClientHeight - 28;
 end;
 
 procedure TfrmMain.ShowBanner(AKind: TWbceBannerKind; const AText: string);
@@ -440,9 +454,48 @@ begin
     L.LoadFromFile(FBase + ATemplate);
     L.Text := StringReplace(L.Text, '__PHP__', FBaseFwd + FPhpDir, [rfReplaceAll]);
     L.Text := StringReplace(L.Text, '__BASE__', FBaseFwd, [rfReplaceAll]);
+    L.Text := ApplyPorts(L.Text);
     L.SaveToFile(FBase + ADest);
   finally
     L.Free;
+  end;
+end;
+
+{ WBCE-config.php an die eingestellten Ports anpassen und das Ergebnis protokollieren }
+procedure TfrmMain.SyncConfigLogged;
+var
+  msg: string;
+begin
+  if SyncWbceConfig(FBase, msg) then
+  begin
+    if msg <> '' then Log(msg);
+  end
+  else
+  begin
+    Log('WARNUNG: ' + msg);
+    ShowBanner(bkError, msg + ' Bitte DB_PORT und WB_URL in htdocs\wbce\config.php prüfen.');
+  end;
+end;
+
+procedure TfrmMain.SettingsClick(Sender: TObject);
+var
+  oldHttp, oldDb: Integer;
+begin
+  if not (FState in [ssStopped, ssRunning]) then Exit;
+  oldHttp := Cfg.HttpPort;
+  oldDb := Cfg.DbPort;
+  if not ShowSettingsDialog(Self, FBase, FState = ssStopped) then Exit;
+  if (Cfg.HttpPort <> oldHttp) or (Cfg.DbPort <> oldDb) then
+  begin
+    Log('Neue Ports: Webserver ' + IntToStr(Cfg.HttpPort) + ', Datenbank ' +
+        IntToStr(Cfg.DbPort) + '.');
+    SyncConfigLogged;
+    SetState(FState);   // Statuskarte zeigt die neue Adresse
+  end;
+  case Cfg.OpenTarget of
+    otSite: Log('Beim Start wird die Website geöffnet.');
+    otAdmin: Log('Beim Start wird die Administration geöffnet.');
+    otNone: Log('Beim Start wird kein Browser geöffnet.');
   end;
 end;
 
@@ -494,20 +547,20 @@ begin
   begin
     SetState(ssStarting);
     steps.SetStep(0, wsDone, 'PHP: php');
-    steps.SetStep(1, wsDone, 'Port ' + IntToStr(DB_PORT));
-    steps.SetStep(2, wsActive, 'Port ' + IntToStr(HTTP_PORT));
+    steps.SetStep(1, wsDone, 'Port ' + IntToStr(Cfg.DbPort));
+    steps.SetStep(2, wsActive, 'Port ' + IntToStr(Cfg.HttpPort));
     Log('Prüfe Dateien ...');
-    Log('Starte MariaDB (Port ' + IntToStr(DB_PORT) + ') ...');
-    Log('Starte Apache (Port ' + IntToStr(HTTP_PORT) + ') ...');
+    Log('Starte MariaDB (Port ' + IntToStr(Cfg.DbPort) + ') ...');
+    Log('Starte Apache (Port ' + IntToStr(Cfg.HttpPort) + ') ...');
   end
   else if (AMode = 'richtet') or (AMode = 'fertig') or (AMode = 'fehler') then
   begin
     FState := ssRunning;
     SetState(ssRunning);
     steps.SetStep(0, wsDone, 'PHP: php');
-    steps.SetStep(1, wsDone, 'Port ' + IntToStr(DB_PORT));
-    steps.SetStep(2, wsDone, 'Port ' + IntToStr(HTTP_PORT));
-    Log('Server läuft: ' + APP_URL);
+    steps.SetStep(1, wsDone, 'Port ' + IntToStr(Cfg.DbPort));
+    steps.SetStep(2, wsDone, 'Port ' + IntToStr(Cfg.HttpPort));
+    Log('Server läuft: ' + SiteUrl);
     if AMode = 'richtet' then
     begin
       steps.SetStep(3, wsActive, 'Admin-Zugang wird angelegt');
@@ -518,7 +571,7 @@ begin
       steps.SetStep(3, wsDone, 'Admin „admin“ angelegt');
       steps.SetStep(4, wsDone, 'Anmeldeseite geöffnet');
       ShowBanner(bkOk, 'WBCE ist eingerichtet. Anmeldung in der Administration mit dem Benutzer „admin“ und dem gewählten Passwort.');
-      Log('WBCE ist eingerichtet. Anmeldung: ' + ADMIN_URL);
+      Log('WBCE ist eingerichtet. Anmeldung: ' + AdminUrl);
     end
     else
     begin
@@ -559,13 +612,13 @@ begin
     Enabled := True;
   end;
   status.SetStatus(clWbGreen, 'Server läuft',
-    APP_URL + '   ·   Vor dem Abziehen des Sticks stoppen!');
+    SiteUrl + '   ·   Vor dem Abziehen des Sticks stoppen!');
   if Result then
   begin
     steps.SetStep(3, wsDone, 'Admin „' + D.User + '“ angelegt');
     ShowBanner(bkOk, 'WBCE ist eingerichtet. Anmeldung in der Administration mit dem Benutzer „' +
       D.User + '“ und dem gewählten Passwort.');
-    Log('WBCE ist eingerichtet. Anmeldung: ' + ADMIN_URL + '  (Benutzer: ' + D.User + ')');
+    Log('WBCE ist eingerichtet. Anmeldung: ' + AdminUrl + '  (Benutzer: ' + D.User + ')');
   end
   else
   begin
@@ -587,14 +640,14 @@ begin
   begin
     if DoSetup(D, err) then
     begin
-      OpenURL(ADMIN_URL);
+      OpenURL(AdminUrl);
       steps.SetStep(4, wsDone, 'Anmeldeseite geöffnet');
     end
     else if AFromStart then
-      OpenURL(APP_URL);
+      OpenURL(SiteUrl);
   end
   else if AFromStart then
-    OpenURL(APP_URL);
+    OpenURL(SiteUrl);
 end;
 procedure TfrmMain.SetupClick(Sender: TObject);
 begin
@@ -663,15 +716,22 @@ begin
     ForceDirectories(FBase + 'logs');
     ForceDirectories(FBase + 'tmp');
 
-    if PortOpen(HTTP_PORT) then
-      Fail('Port ' + IntToStr(HTTP_PORT) + ' ist bereits belegt (anderer Webserver?).');
-    if PortOpen(DB_PORT) then
-      Fail('Port ' + IntToStr(DB_PORT) + ' ist bereits belegt (andere MariaDB/MySQL?).');
+    LoadConfig(FBase);   // falls portable.ini von Hand geaendert wurde
+    if PortOpen(Cfg.HttpPort) then
+      Fail('Port ' + IntToStr(Cfg.HttpPort) + ' ist bereits belegt (anderer Webserver ' +
+           'oder ein weiteres WBCE Portable?).' + LineEnding +
+           'Unten unter „Einstellungen“ lassen sich andere Ports wählen.');
+    if PortOpen(Cfg.DbPort) then
+      Fail('Port ' + IntToStr(Cfg.DbPort) + ' ist bereits belegt (andere MariaDB/MySQL ' +
+           'oder ein weiteres WBCE Portable?).' + LineEnding +
+           'Unten unter „Einstellungen“ lassen sich andere Ports wählen.');
 
-    Log('Schreibe Konfiguration (Pfad: ' + FBase + ', PHP: ' + FPhpDir + ')');
+    Log('Schreibe Konfiguration (Pfad: ' + FBase + ', PHP: ' + FPhpDir + ', Ports ' +
+        IntToStr(Cfg.HttpPort) + '/' + IntToStr(Cfg.DbPort) + ')');
     WriteConfig('conf-httpd.template', 'Apache24\conf\httpd.conf');
     WriteConfig('conf-php.template', FPhpDir + '\php.ini');
     WriteConfig('conf-my.template', 'my.ini');
+    SyncConfigLogged;
 
     // PHP-Verzeichnis in den DLL-Suchpfad (curl/intl brauchen DLLs neben php.exe)
     Windows.SetEnvironmentVariableA('PATH',
@@ -688,31 +748,31 @@ begin
              LineEnding + 'Ordner "data" leeren und erneut versuchen.');
     end;
 
-    steps.SetStep(1, wsActive, 'Port ' + IntToStr(DB_PORT));
-    Log('Starte MariaDB (Port ' + IntToStr(DB_PORT) + ') ...');
+    steps.SetStep(1, wsActive, 'Port ' + IntToStr(Cfg.DbPort));
+    Log('Starte MariaDB (Port ' + IntToStr(Cfg.DbPort) + ') ...');
     FDbPid := StartBg(FBase + 'mariadb\bin\mysqld.exe',
       ['--defaults-file=' + FBase + 'my.ini']);
-    if not WaitForPort(DB_PORT, 60, FDbPid) then
+    if not WaitForPort(Cfg.DbPort, 60, FDbPid) then
       Fail('MariaDB ist nicht gestartet. Siehe data\*.err');
-    steps.SetStep(1, wsDone, 'Port ' + IntToStr(DB_PORT));
+    steps.SetStep(1, wsDone, 'Port ' + IntToStr(Cfg.DbPort));
 
     RunWait(FBase + 'mariadb\bin\mariadb.exe',
-      ['--protocol=tcp', '--port=' + IntToStr(DB_PORT), '-u', 'root', '-e',
+      ['--protocol=tcp', '--port=' + IntToStr(Cfg.DbPort), '-u', 'root', '-e',
        'CREATE DATABASE IF NOT EXISTS wbce CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;']);
 
-    steps.SetStep(2, wsActive, 'Port ' + IntToStr(HTTP_PORT));
-    Log('Starte Apache (Port ' + IntToStr(HTTP_PORT) + ') ...');
+    steps.SetStep(2, wsActive, 'Port ' + IntToStr(Cfg.HttpPort));
+    Log('Starte Apache (Port ' + IntToStr(Cfg.HttpPort) + ') ...');
     FApachePid := StartBg(FBase + 'Apache24\bin\httpd.exe', []);
-    if not WaitForPort(HTTP_PORT, 30, FApachePid) then
+    if not WaitForPort(Cfg.HttpPort, 30, FApachePid) then
       Fail('Apache ist nicht gestartet. Siehe logs\apache-error.log');
-    steps.SetStep(2, wsDone, 'Port ' + IntToStr(HTTP_PORT));
+    steps.SetStep(2, wsDone, 'Port ' + IntToStr(Cfg.HttpPort));
 
     SavePids;
     SetState(ssRunning);
-    Log('Server läuft: ' + APP_URL);
-    if not FileExists(FBase + 'htdocs\wbce\config.php') then
-      Log('Erster Start: WBCE-Installer, DB-Host 127.0.0.1:3311, DB wbce, ' +
-          'Benutzer root, Passwort leer, System Windows.');
+    Log('Server läuft: ' + SiteUrl);
+    if not WbceInstalled(FBase) then
+      Log('Erster Start: WBCE-Installer, DB-Host 127.0.0.1:' + IntToStr(Cfg.DbPort) +
+          ', DB wbce, Benutzer root, Passwort leer, System Windows.');
     if WbceInstalled(FBase) then
       steps.SetStep(3, wsDone, 'bereits eingerichtet')
     else
@@ -720,10 +780,20 @@ begin
     if not FSilent then
     begin
       if WbceInstalled(FBase) then
-      begin
-        OpenURL(APP_URL);
-        steps.SetStep(4, wsDone, 'Browser geöffnet');
-      end
+        case Cfg.OpenTarget of
+          otSite:
+            begin
+              OpenURL(SiteUrl);
+              steps.SetStep(4, wsDone, 'Website geöffnet');
+            end;
+          otAdmin:
+            begin
+              OpenURL(AdminUrl);
+              steps.SetStep(4, wsDone, 'Administration geöffnet');
+            end;
+          otNone:
+            steps.SetStep(4, wsDone, 'Browser nicht geöffnet (Einstellung)');
+        end
       else OfferSetup(True);
     end;
   except
@@ -734,7 +804,7 @@ begin
       KillPid(FApachePid);
       if FDbPid <> 0 then
         RunWait(FBase + 'mariadb\bin\mariadb-admin.exe',
-          ['--protocol=tcp', '--port=' + IntToStr(DB_PORT), '-u', 'root', 'shutdown']);
+          ['--protocol=tcp', '--port=' + IntToStr(Cfg.DbPort), '-u', 'root', 'shutdown']);
       KillPid(FDbPid);
       FApachePid := 0;
       FDbPid := 0;
@@ -755,7 +825,7 @@ begin
 
   Log('Fahre MariaDB sauber herunter ...');
   RunWait(FBase + 'mariadb\bin\mariadb-admin.exe',
-    ['--protocol=tcp', '--port=' + IntToStr(DB_PORT), '-u', 'root', 'shutdown']);
+    ['--protocol=tcp', '--port=' + IntToStr(Cfg.DbPort), '-u', 'root', 'shutdown']);
   t := GetTickCount64 + 30000;
   while ProcessAlive(FDbPid) and (GetTickCount64 < t) do Pause(200);
   if ProcessAlive(FDbPid) then
@@ -785,12 +855,12 @@ end;
 
 procedure TfrmMain.SiteClick(Sender: TObject);
 begin
-  OpenURL(APP_URL);
+  OpenURL(SiteUrl);
 end;
 
 procedure TfrmMain.AdminClick(Sender: TObject);
 begin
-  OpenURL(ADMIN_URL);
+  OpenURL(AdminUrl);
 end;
 
 procedure TfrmMain.TimerTick(Sender: TObject);
@@ -848,6 +918,8 @@ begin
         PreviewSetupDialog(Self, FBase, Copy(ParamStr(i), 15, 500))
       else if Pos('/previewphp:', LowerCase(ParamStr(i))) = 1 then
         PreviewPhpDialog(Self, FBase, Copy(ParamStr(i), 13, 500))
+      else if Pos('/previewsettings:', LowerCase(ParamStr(i))) = 1 then
+        PreviewSettingsDialog(Self, FBase, Copy(ParamStr(i), 18, 500))
       else
         PreviewMode(SysUtils.GetEnvironmentVariable('WBCE_PREVIEW_MODE'), Copy(ParamStr(i), 10, 500));
       Close;

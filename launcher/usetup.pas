@@ -15,7 +15,7 @@ unit usetup;
 interface
 
 uses
-  Classes, SysUtils, Forms, Controls, Graphics, StdCtrls, Dialogs, Process, Windows, uphp, uwbce;
+  Classes, SysUtils, Forms, Controls, Graphics, StdCtrls, Dialogs, Process, Windows, uphp, uwbce, uconfig;
 
 type
   TSetupData = record
@@ -39,10 +39,6 @@ procedure PreviewSetupDialog(AOwner: TComponent; const ABase, AFile: string);
 implementation
 
 const
-  HTTP_PORT = 4443;
-  DB_PORT = 3311;
-  SITE_URL = 'http://localhost:4443/wbce';
-  INSTALL_URL = 'http://127.0.0.1:4443/wbce/install/';
   DB_NAME = 'wbce';
   DEMO_SQL = 'demo\demo.sql';       // Platzhalter: kommt spaeter, wird dann automatisch angeboten
   PASS_CHARS = 'a-zA-Z0-9 _ - ! # * + @ $ & :';
@@ -159,7 +155,7 @@ end;
 function SqlRoot(const ABase, ASql: string; out AOut: string): Boolean;
 begin
   Result := (RunIO(ABase + 'mariadb\bin\mariadb.exe',
-    ['--protocol=tcp', '--port=' + IntToStr(DB_PORT), '-u', 'root', '-N', '-B'],
+    ['--protocol=tcp', '--port=' + IntToStr(uconfig.Cfg.DbPort), '-u', 'root', '-N', '-B'],
     ABase, ASql, AOut) = 0) and (Pos('ERROR', AOut) = 0);
 end;
 
@@ -331,7 +327,7 @@ begin
     SysUtils.DeleteFile(ABase + 'tmp\setup-cookies.txt');
     Say('Starte die WBCE-Installation ...');
     rc := RunIO(SysExe('curl.exe'), ['-s', '-L', '-c', jar, '-b', jar, '-o', 'NUL',
-            INSTALL_URL + 'index.php'], ABase, '', outp);
+            InstallUrl + 'index.php'], ABase, '', outp);
     if rc <> 0 then
     begin
       AErr := 'Der Installer ist nicht erreichbar (läuft der Server?).';
@@ -339,7 +335,7 @@ begin
       Exit;
     end;
 
-    cfg := 'url = "' + INSTALL_URL + 'save.php"' + LineEnding +
+    cfg := 'url = "' + InstallUrl + 'save.php"' + LineEnding +
            'silent' + LineEnding +
            'output = "NUL"' + LineEnding +
            'write-out = "%{http_code} %{redirect_url}"' + LineEnding +
@@ -347,11 +343,11 @@ begin
            'cookie-jar = "' + jar + '"' + LineEnding;
       cfg := cfg +
       'data-urlencode = "website_title=' + CurlCfgEscape(CleanTitle(D.Title)) + '"' + LineEnding +
-      'data-urlencode = "wb_url=' + SITE_URL + '"' + LineEnding +
+      'data-urlencode = "wb_url=' + SiteUrl + '"' + LineEnding +
       'data-urlencode = "default_timezone=' + IntToStr(TimeZoneHours) + '"' + LineEnding +
       'data-urlencode = "default_language=' + LanguageCode(ABase) + '"' + LineEnding +
       'data-urlencode = "operating_system=windows"' + LineEnding +
-      'data-urlencode = "database_host=127.0.0.1:' + IntToStr(DB_PORT) + '"' + LineEnding +
+      'data-urlencode = "database_host=127.0.0.1:' + IntToStr(uconfig.Cfg.DbPort) + '"' + LineEnding +
       'data-urlencode = "database_username=' + dbUser + '"' + LineEnding +
       'data-urlencode = "database_password=' + dbPass + '"' + LineEnding +
       'data-urlencode = "database_name=' + DB_NAME + '"' + LineEnding +
@@ -369,7 +365,7 @@ begin
     begin
       // Fehlermeldungen des Installers aus der Session holen
       RunIO(SysExe('curl.exe'), ['-s', '-c', jar, '-b', jar,
-        INSTALL_URL + 'index.php?sessions_checked=true'], ABase, '', page);
+        InstallUrl + 'index.php?sessions_checked=true'], ABase, '', page);
       errs := ExtractInstallerErrors(page);
       if errs = '' then errs := 'Der Installer hat die Eingaben nicht angenommen (Antwort: ' + Trim(outp) + ').';
       AErr := errs;

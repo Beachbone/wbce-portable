@@ -760,6 +760,21 @@ begin
         end;
         big.Canvas.Font.Assign(TControl(c).Font);
         WbceDrawText(big.Canvas, Types.Rect(R.Left + 22, R.Top, R.Right, R.Bottom), TCheckBox(c).Caption, taLeftJustify, tlCenter, False);
+      end
+      else if c is TRadioButton then
+      begin
+        big.Canvas.Brush.Style := bsSolid;
+        big.Canvas.Brush.Color := clWhite;
+        big.Canvas.Pen.Color := TColor($888888);
+        big.Canvas.Ellipse(R.Left, R.Top + 3, R.Left + 15, R.Top + 18);
+        if TRadioButton(c).Checked then
+        begin
+          big.Canvas.Brush.Color := clWbBlue;
+          big.Canvas.Pen.Color := clWbBlue;
+          big.Canvas.Ellipse(R.Left + 4, R.Top + 7, R.Left + 11, R.Top + 14);
+        end;
+        big.Canvas.Font.Assign(TControl(c).Font);
+        WbceDrawText(big.Canvas, Types.Rect(R.Left + 22, R.Top, R.Right, R.Bottom), TRadioButton(c).Caption, taLeftJustify, tlCenter, False);
       end;
     end;
     big.SaveToFile(AFile);
