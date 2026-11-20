@@ -15,7 +15,7 @@ build scripts and the launcher source code in this repository.
 | WBCE-Portable.exe launcher | this repo | MIT | `launcher/` in this repo; built with Free Pascal 3.2.2 / Lazarus (LCL and RTL: LGPL with static-linking exception) |
 
 The release ZIP also contains the unmodified, Microsoft-signed Visual C++ runtime
-libraries `vcruntime140.dll`, `vcruntime140_1.dll` and `msvcp140.dll` (version 14.51,
+libraries `vcruntime140.dll`, `vcruntime140_1.dll` and `msvcp140.dll` (version 14.52,
 x64) next to `httpd.exe` (`Apache24/bin/`) and `php.exe` (`php/`), so that no
 system-wide installation of the Visual C++ Redistributable is needed (app-local
 deployment). MariaDB ships its own copies. These files are distributed under

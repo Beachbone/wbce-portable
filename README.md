@@ -12,13 +12,13 @@ Komplett portables [WBCE CMS](https://github.com/WBCE/WBCE_CMS) für Windows –
 
 > **Windows blockiert die EXE?** Dateien aus dem Internet tragen die Markierung „Mark of the Web“; Windows zeigt dann eine SmartScreen-Warnung oder lässt die EXE gar nicht starten. Am einfachsten setzt man **vor dem Entpacken** bei der ZIP den Haken *„Zulassen“* (Eigenschaften der Datei) – dann sind alle entpackten Dateien freigegeben. Nachträglich geht es in PowerShell mit `Get-ChildItem -Recurse "C:\Pfad\zu\WBCE-Portable" | Unblock-File`. Bei der SmartScreen-Meldung hilft *„Weitere Informationen“ → „Trotzdem ausführen“*. Die EXE ist (noch) nicht signiert.
 >
-> **Visual C++ Runtime:** Die nötigen Microsoft-Bibliotheken (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`, Version 14.51) liegen direkt bei Apache und PHP im Ordner (*App-local Deployment*). Es muss also **nichts installiert** werden und es sind **keine Administratorrechte** nötig – auch nicht auf gesperrten Rechnern.
+> **Visual C++ Runtime:** Die nötigen Microsoft-Bibliotheken (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`, Version 14.52) liegen direkt bei Apache und PHP im Ordner (*App-local Deployment*). Es muss also **nichts installiert** werden und es sind **keine Administratorrechte** nötig – auch nicht auf gesperrten Rechnern.
 
 Beim ersten Start folgt der WBCE-Installer (Werte siehe unten). Zum Beenden **Server stoppen** klicken und erst danach den Stick abziehen.
 
 Voraussetzung: Windows 10/11 (64 Bit). Die ZIP ist ca. 110 MB groß (mit `SHA256SUMS.txt`).
 
-Enthalten (Release 0.6.0): WBCE CMS 1.6.11 · Apache 2.4.71 · PHP 8.4.28 · MariaDB 11.4.14 · Adminer 6.3.1 · Microsoft VC++ Runtime-DLLs 14.51
+Enthalten (Release 0.6.0): WBCE CMS 1.6.11 · Apache 2.4.71 · PHP 8.4.28 · MariaDB 11.4.14 · Adminer 6.3.1 · Microsoft VC++ Runtime-DLLs 14.52
 
 ## Benutzung im Detail
 
