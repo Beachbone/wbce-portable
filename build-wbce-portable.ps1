@@ -486,7 +486,7 @@ Benutzung
    gefragt, ob gestoppt werden soll.
 
 PHP-Version wechseln: in der EXE unten rechts auf "PHP x.y.z" klicken (nur bei
-gestopptem Server). Weitere Versionen (8.2 bis 8.5) werden von php.net geladen
+gestopptem Server). Weitere Versionen (ab 8.2) werden von php.net geladen
 und per SHA-256 geprueft; die Daten bleiben unveraendert. Gibt es fuer die
 installierte Version ein Update im selben Zweig (z. B. 8.4.27 -> 8.4.28), steht
 es in der Liste und laesst sich mit "Aktualisieren" einspielen; die alte
